@@ -1,0 +1,24 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Environments
+.venv/
+.env
+
+# Local data artifacts (Phase 1 pipeline output — local filesystem only, see
+# MD_design_docs/09_phase1_implementation_design.md §13)
+data/raw/*
+data/interim/*
+data/processed/*
+data/datasheet/*
+!data/raw/.gitkeep
+!data/interim/.gitkeep
+!data/processed/.gitkeep
+!data/datasheet/.gitkeep
+data/manifest.json
