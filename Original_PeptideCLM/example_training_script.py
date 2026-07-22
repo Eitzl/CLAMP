@@ -1,7 +1,7 @@
 import pandas as pd
 from transformers import AutoTokenizer, AutoModelForSequenceClassification, TrainingArguments, Trainer
 from datasets import Dataset
-from tokenizer.my_tokenizers import SMILES_SPE_Tokenizer
+from Original_PeptideCLM.tokenizer.my_tokenizers import SMILES_SPE_Tokenizer
 
 # Load the data
 data = pd.concat('clustered_data/all_clusters.csv')
