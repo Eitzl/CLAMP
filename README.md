@@ -6,8 +6,8 @@ membrane permeabilization, measured via HC50 (hemolytic activity) and MIC
 language model and fine-tune it on a unified, deduplicated dataset pulled
 together from several public AMP/hemolysis databases.
 
-The project is organized in dev (see
-`MD_design_docs/08_implementation_roadmap.md` for the full plan):
+This project is under active development, following the five-phase plan in
+`MD_design_docs/08_implementation_roadmap.md`.
 
 
 ## Why five sources
@@ -103,14 +103,14 @@ src/clamp/
 
 
 
-  Data were obtained from the DBAASP (https://dbaasp.org) which is an open-access AMP data
+Data were obtained from the DBAASP (https://dbaasp.org) which is an open-access AMP data
 resource supported by I.Beritashvili Center of Experimental Biomedicine (IBCEB) Tbilisi,
 Georgia and the National Institute of Allergy and Infectious Diseases (NIAID) Office of Cyber
 Infrastructure and Computational Biology (OCICB) in Bethesda, MD. These data were collected
 and submitted by members of the DBAASP team.
 
- Pirtskhalava M, Amstrong
-AA,Grigolava M, Chubinidze M, Alimbarashvili E, Vishnepolsky B, Gabrielian A, Rosenthal A,
-HurtDE, Tartakovsky M. DBAASP v3: database of antimicrobial/cytotoxic activity and structure
-ofpeptides as a resource for development of new therapeutics, Nucleic Acids Research,
-Volume49, Issue D1, 8 January 2021, Pages D288–D297, https://doi.org/10.1093/nar/gkaa991
+Pirtskhalava M, Armstrong AA, Grigolava M, Chubinidze M, Alimbarashvili E, Vishnepolsky B,
+Gabrielian A, Rosenthal A, Hurt DE, Tartakovsky M. DBAASP v3: database of antimicrobial/cytotoxic
+activity and structure of peptides as a resource for development of new therapeutics, Nucleic
+Acids Research, Volume 49, Issue D1, 8 January 2021, Pages D288–D297,
+https://doi.org/10.1093/nar/gkaa991
