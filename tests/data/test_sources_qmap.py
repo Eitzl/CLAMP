@@ -23,13 +23,15 @@ class _FakeConsensus:
     """Minimal stand-in for QMAP's Target / HemolyticActivity objects —
     _sample_to_records only ever reads `.consensus`."""
 
-    def __init__(self, consensus):
+    def __init__(self, consensus) -> None:
         self.consensus = consensus
 
 
 class _FakeSample:
-    def __init__(self, id, sequence, targets, hc50=None, smiles=None, nterminal=None, cterminal=None, bonds=None):
-        self.id = id
+    def __init__(
+        self, sample_id, sequence, targets, hc50=None, smiles=None, nterminal=None, cterminal=None, bonds=None
+    ) -> None:
+        self.id = sample_id
         self.sequence = sequence
         self.targets = targets
         self.hc50 = hc50
@@ -114,7 +116,7 @@ class TestNaNConsensusHandling:
 
     def test_nan_target_consensus_yields_no_mic_row(self):
         sample = _FakeSample(
-            id=1,
+            sample_id=1,
             sequence="KWKLFKKIEK",
             targets={"Escherichia coli": _FakeConsensus(math.nan)},
             hc50=None,
@@ -127,7 +129,7 @@ class TestNaNConsensusHandling:
 
     def test_nan_consensus_target_skipped_but_valid_sibling_target_kept(self):
         sample = _FakeSample(
-            id=2,
+            sample_id=2,
             sequence="KWKLFKKIEK",
             targets={
                 "Escherichia coli": _FakeConsensus(math.nan),
@@ -140,9 +142,23 @@ class TestNaNConsensusHandling:
         assert mic_rows[0].mic_target_species == "Staphylococcus aureus"
         assert mic_rows[0].mic_value == 4.0
 
+    def test_none_target_consensus_yields_no_mic_row(self):
+        """CodeRabbit PR #4 review: the NaN case was covered, but not a bare
+        `None` consensus (target.consensus is None at sources/qmap.py's MIC
+        branch) — same expected behavior as NaN, no MIC row emitted."""
+        sample = _FakeSample(
+            sample_id=4,
+            sequence="KWKLFKKIEK",
+            targets={"Escherichia coli": _FakeConsensus(None)},
+            hc50=None,
+        )
+        records = _sample_to_records(sample)
+        assert all(r.mic_value is None for r in records)
+        assert all(r.mic_target_species is None for r in records)
+
     def test_valid_consensus_still_produces_mic_row(self):
         sample = _FakeSample(
-            id=3,
+            sample_id=3,
             sequence="KWKLFKKIEK",
             targets={"Escherichia coli": _FakeConsensus(2.0)},
         )
