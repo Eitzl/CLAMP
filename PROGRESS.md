@@ -24,10 +24,25 @@ do not touch docs 10/11 (owned by a concurrent agent).
       §2 "data contract consumed from Phase 2/3" section (since docs 10/11 are
       concurrent and unread), checkpoint directory format, `clamp-train` CLI,
       test plan, runbook, DoD, and 8 flagged open risks.
-- [ ] Draft doc 13 (Phase 5) outline.
-- [ ] Write doc 13 in full.
-- [ ] Self-review both docs against doc 09's bar.
-- [ ] Commit.
-- [ ] Push branch `phase4-5-design-docs`.
-- [ ] Open PR against `Eitzl/CLAMP` `master`.
+- [x] Draft doc 13 (Phase 5) outline: two workstreams (PAMPA warm-start
+      reproduction + ablation; derived-vs-learned TI ablation), shared statistical
+      testing utility, module layout, CLI, test plan, runbook, DoD, open risks.
+      — 2026-07-23T17:35:00Z: outline settled; reuses Phase 4's checkpoint/metrics
+      modules rather than duplicating them.
+- [x] Write doc 13 in full. — 2026-07-23T17:35:00Z: written to
+      `MD_design_docs/13_phase5_implementation_design.md`. Covers both roadmap
+      Phase 5 workstreams (warm-start-encoder ablation per doc 03; derived-vs-
+      learned TI ablation per doc 08's Phase 5 bullet), with a concrete
+      freeze-vs-LoRA protocol decision, checkpoint-parity verification, paired
+      Wilcoxon significance testing shared with doc 12, CLI, test plan, runbook,
+      DoD, and 8 flagged open risks.
+- [x] Self-review both docs against doc 09's bar. — 2026-07-23T17:38:00Z: confirmed
+      doc 12 (738 lines) and doc 13 (535 lines) are comparable in depth/concreteness
+      to doc 09 (604 lines); grepped both for accidental references that would edit
+      or depend on unread content in docs 10/11 (only forward-pointer mentions
+      found, no collisions); confirmed `git status` shows no changes under
+      `src/`/`tests/` and docs 10/11 untouched.
+- [x] Commit. — 2026-07-23T17:40:00Z
+- [x] Push branch `phase4-5-design-docs`. — 2026-07-23T17:41:00Z
+- [x] Open PR against `Eitzl/CLAMP` `master`. — 2026-07-23T17:43:00Z
 </content>
