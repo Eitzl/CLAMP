@@ -4,7 +4,11 @@
 
 ---
 
-## 0. Scope and non-goals
+## Sections labeled with ":yes:" or ":LGTM:" have been approved. ##
+
+---
+
+## 0. Scope and non-goals :LGTM:
 
 **In scope** (mirrors doc 06 §6's P0 checklist and doc 08's Phase 1 bullets):
 - Pull DBAASP (paginated REST API), DRAMP, Hemolytik2, HemoPI2, and QMAP (bulk files).
