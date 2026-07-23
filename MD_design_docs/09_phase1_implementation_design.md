@@ -24,7 +24,7 @@
 
 ---
 
-## 1. Package layout - 
+## 1. Package layout
 
 **Recommendation: `src/`-layout installable package**, importable as `clamp`, with a CLI entry point. This is the one scaffold decision already settled by your answer, included here for completeness since everything else hangs off it.
 
