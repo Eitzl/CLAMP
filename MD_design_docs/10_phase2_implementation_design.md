@@ -119,13 +119,14 @@ class ClusterAssignment(BaseModel):
 
 
 class PartitionMethod(StrEnum):
+    EMBEDDING_KMEANS = "embedding_kmeans"
     GRAPH_PART = "graph_part"
     LEIDEN_FALLBACK = "leiden_fallback"
 
 class HomologyCommunity(BaseModel):
     peptide_uid: str
     community_id: int
-    method: PartitionMethod
+    method: PartitionMethod           # always GRAPH_PART or LEIDEN_FALLBACK for this model
     identity_threshold: float
 
 
@@ -138,16 +139,26 @@ class FoldAssignment(BaseModel):
     fold_id: int                      # which LOCO rotation (0..k-1)
     peptide_uid: str
     role: Role
-    cluster_id: int                   # the cluster this peptide_uid belongs to (constant across folds)
+    partition_id: int                 # the cluster/community id peptide_uid belongs to under
+                                       # whichever partition produced this fold set (constant
+                                       # across folds) — NOT necessarily a k-means cluster_id;
+                                       # see partition_method
+    partition_method: PartitionMethod # which partition produced partition_id: EMBEDDING_KMEANS
+                                       # when build_loco_folds was given a ClusterAssignment table
+                                       # (§7), or GRAPH_PART/LEIDEN_FALLBACK when given a
+                                       # HomologyCommunity table (§8.4's escalation path) — a
+                                       # homology community_id must never be silently relabeled as
+                                       # a cluster_id, or downstream reports can't tell which
+                                       # partitioning method actually produced a given fold
 ```
 
-Same design rationale as doc 09 §3: pydantic models validated at construction, `model_dump()` for the parquet round-trip. One deliberate asymmetry from `PeptideRecord`: `FoldAssignment` is **peptide-level**, not assay-record-level. A peptide with three MIC replicate rows in `dataset.parquet` gets one `cluster_id` and one `role` per fold — `folds.py` (§9) is responsible for the join back onto the per-assay-record rows, not for tracking fold membership per row.
+Same design rationale as doc 09 §3: pydantic models validated at construction, `model_dump()` for the parquet round-trip. One deliberate asymmetry from `PeptideRecord`: `FoldAssignment` is **peptide-level**, not assay-record-level. A peptide with three MIC replicate rows in `dataset.parquet` gets one `partition_id` and one `role` per fold — `folds.py` (§9) is responsible for the join back onto the per-assay-record rows, not for tracking fold membership per row.
 
 ---
 
 ## 5. Config additions
 
-Extend the existing `clamp.config.Settings` (do not create a parallel settings object — one validated settings surface per doc 09 §4's original reasoning still applies):
+Extend the existing `clamp.config.Settings` (do not create a parallel settings object — one validated settings surface per doc 09 §4's original reasoning still applies). Needs `field_validator`/`model_validator` added to the existing `from pydantic import ...` line:
 
 ```python
 class Settings(BaseSettings):
@@ -168,6 +179,35 @@ class Settings(BaseSettings):
     homology_gap_open: float = -5.0
     homology_gap_extend: float = -1.0
 
+    @field_validator("embedding_batch_size", "kmeans_min_cluster_size", "kmeans_random_state_search")
+    @classmethod
+    def _must_be_positive(cls, v: int) -> int:
+        if v <= 0:
+            raise ValueError("must be a positive integer")
+        return v
+
+    @field_validator("kmeans_pca_variance")
+    @classmethod
+    def _pca_variance_in_unit_interval(cls, v: float) -> float:
+        if not (0.0 < v <= 1.0):
+            raise ValueError("kmeans_pca_variance must be in (0, 1]")
+        return v
+
+    @field_validator("homology_identity_threshold")
+    @classmethod
+    def _identity_threshold_in_unit_interval(cls, v: float) -> float:
+        if not (0.0 <= v <= 1.0):
+            raise ValueError("homology_identity_threshold must be in [0, 1]")
+        return v
+
+    @model_validator(mode="after")
+    def _kmeans_k_range_is_ordered(self) -> "Settings":
+        if self.kmeans_k_min > self.kmeans_k_max:
+            raise ValueError(
+                f"kmeans_k_min ({self.kmeans_k_min}) must not exceed kmeans_k_max ({self.kmeans_k_max})"
+            )
+        return self
+
     @property
     def embeddings_dir(self) -> Path:
         return self.data_root / "embeddings"
@@ -176,6 +216,8 @@ class Settings(BaseSettings):
     def splits_dir(self) -> Path:
         return self.data_root / "splits"
 ```
+
+These run at `Settings` construction (pydantic's normal validation timing), so a bad `.env`/`CLAMP_*` override fails immediately on startup rather than partway through a multi-hour `clamp-split run-all` — an unconstrained `kmeans_k_min > kmeans_k_max` or a negative `embedding_batch_size` should never reach `sweep_k`/`embed_dataset` in the first place.
 
 Leaving `embedding_model_revision` defaulted to `""` rather than a guessed sha is deliberate: `embed.py` (§6.4) should refuse to run against an unpinned revision, forcing whoever runs this for the first time to resolve and record a real commit sha, exactly as doc 05 §7's "first concrete task" flags for Phase 3. Don't paper over that with a plausible-looking fake default.
 
@@ -289,11 +331,35 @@ def sweep_k(
     ...
 
 def select_k(results: list[KSweepResult], min_cluster_size: int) -> KSweepResult:
-    """Joint silhouette/DB/CH selection (doc 07 §1.2's rule, reused
-    verbatim), restricted to candidates whose min_hc50_labeled_cluster_size
-    clears `min_cluster_size` — reject a k/seed combination on cluster-size
-    grounds before ranking survivors by cluster-quality metrics, exactly as
-    doc 07 §3.4 specifies."""
+    """Joint silhouette/DB/CH selection (doc 07 §1.2's rule), restricted to
+    candidates whose min_hc50_labeled_cluster_size clears `min_cluster_size`
+    — reject a k/seed combination on cluster-size grounds before ranking
+    survivors by cluster-quality metrics, exactly as doc 07 §3.4 specifies.
+
+    Deterministic ranking contract (doc 07 §1.2 says "joint selection" but
+    doesn't pin down a formula — this is the concrete rule, a documented
+    default that can be revisited once real cluster_sweep.json data exists,
+    not a claim that these particular weights are uniquely correct):
+    1. Reject every candidate whose min_hc50_labeled_cluster_size is below
+       `min_cluster_size`. If no candidate survives, raise
+       NoViableClusteringError(k_min, k_max, min_cluster_size) rather than
+       silently returning a candidate that fails the floor.
+    2. Min-max normalize each of silhouette, davies_bouldin, and
+       calinski_harabasz independently across the *surviving* candidates
+       to [0, 1], correcting direction first: silhouette and
+       calinski_harabasz are higher-is-better as-is; davies_bouldin is
+       lower-is-better, so normalize its negation (equivalently,
+       normalized = 1 - (x - min) / (max - min)) so all three point the
+       same way before combining.
+    3. composite_score = mean of the three normalized values (equal
+       weighting — no metric is assumed more informative than the others
+       without evidence to justify weighting one higher).
+    4. Rank surviving candidates by composite_score descending. Tie-break
+       (only reachable with floating-point-identical composite scores,
+       but must still be deterministic): smallest k, then smallest
+       random_state.
+    5. Return the top-ranked KSweepResult.
+    """
     ...
 ```
 
@@ -353,15 +419,41 @@ def partition_leiden_fallback(
     """Reimplements QMAP's own fix (doc 07 §2.3): build the similarity
     graph directly, run Leiden community detection (`leidenalg`,
     modularity-based), then randomly assign whole communities to the test
-    set until test_fraction is reached, then post-filter any remaining
-    training sequence whose identity to any test sequence exceeds
-    `threshold`. Only invoked if partition_graph_part degenerates."""
+    set until test_fraction is reached. Only invoked if partition_graph_part
+    degenerates.
+
+    Post-filter step, made explicit (this is the part "post-filter" alone
+    doesn't specify): any remaining training sequence whose identity to any
+    test sequence exceeds `threshold` is REASSIGNED to the test set, not
+    dropped from the dataset — this keeps every peptide in some fold while
+    removing the leakage risk. Reassignment happens at the level of whole
+    Leiden communities where possible (move the offending sequence's entire
+    community to test) to avoid breaking the "whole community -> one side"
+    invariant the community detection was for in the first place; only fall
+    back to reassigning the individual sequence if its whole community
+    can't move without pushing test_fraction far past the target.
+
+    After reassignment, test_fraction_achieved and every leakage diagnostic
+    (in particular the same max-identity(test->train) measure §10 computes)
+    MUST be recomputed from the final, post-reassignment partition — the
+    pre-reassignment numbers are exactly the ones the post-filter step
+    exists to invalidate, so returning them would silently under-report the
+    achieved leakage guarantee."""
     ...
 
 def run_homology_partition(sequences: dict[str, str], settings: Settings) -> CommunityResult:
     result = partition_graph_part(sequences, settings.homology_identity_threshold)
     if result.test_fraction_achieved < 0.10:   # degenerate — GraphPart's own failure mode per §2.3
         result = partition_leiden_fallback(sequences, settings.homology_identity_threshold)
+        # partition_leiden_fallback already recomputed test_fraction_achieved and leakage
+        # diagnostics post-reassignment (see its docstring) — re-validate against the same
+        # >= 0.10 floor here rather than assuming the fallback always succeeds silently.
+        if result.test_fraction_achieved < 0.10:
+            raise RuntimeError(
+                "Leiden fallback still produced a degenerate test fraction "
+                f"({result.test_fraction_achieved:.3f}) after post-filtering — needs a human look, "
+                "not a silent third attempt."
+            )
     return result
 ```
 
@@ -380,14 +472,38 @@ There is a second real tension worth resolving explicitly rather than picking on
 
 ```python
 def build_loco_folds(
-    partition: pd.DataFrame,       # peptide_uid -> cluster_id (or community_id), one row per peptide
+    partition: pd.DataFrame,       # peptide_uid -> partition_id, one row per peptide (§7's
+                                    # ClusterAssignment or §8's HomologyCommunity, generically)
+    partition_method: PartitionMethod,   # stamped onto every FoldAssignment (see §4's note)
     validation_strategy: str = "rotate",   # "rotate" or "fixed_smallest", doc 07 §3.4/§3.5
 ) -> list[FoldAssignment]:
-    """One rotation per distinct cluster_id: that cluster is TEST, one other
-    cluster is VAL (per validation_strategy), the rest are TRAIN. This is
-    the 'cheaper hybrid' from doc 07 §3.5 — outer LOCO rotation kept (the
-    leakage-critical part), inner 5-fold CV replaced by a single fixed
-    validation cluster, cutting compute from up to 30 runs to k runs."""
+    """One rotation per distinct partition_id: that cluster/community is
+    TEST, one other is VAL (per validation_strategy), the rest are TRAIN.
+    This is the 'cheaper hybrid' from doc 07 §3.5 — outer LOCO rotation kept
+    (the leakage-critical part), inner 5-fold CV replaced by a single fixed
+    validation cluster, cutting compute from up to 30 runs to k runs.
+
+    Deterministic selection contract (both strategies share the same fixed
+    ordering so identical inputs always produce identical FoldAssignments):
+    1. Order all distinct partition_ids by descending peptide count, tied
+       partition_ids broken by ascending partition_id — this fixed order is
+       computed once per call, not recomputed per rotation.
+    2. One rotation per partition_id in that order; the rotation's
+       partition_id is TEST.
+    3. "rotate": the VAL partition is the next partition_id after TEST in
+       the fixed order, cycling back to the start and skipping TEST itself
+       if reached again (i.e. TEST's immediate successor in the fixed
+       ordering, wrapping around the list once).
+    4. "fixed_smallest": the VAL partition is the smallest-count
+       partition_id in the fixed order that is not TEST. If the globally
+       smallest partition_id IS TEST for this rotation, use the
+       next-smallest eligible one instead (same fixed order, just skip
+       TEST).
+    5. Degenerate case — fewer than 2 distinct partition_ids (nothing
+       eligible to be VAL): that rotation's fold has an EMPTY val split
+       (every non-TEST peptide is TRAIN) rather than raising or fabricating
+       a validation set. `report.py` (§11) must flag any fold with an empty
+       val split explicitly rather than let it pass silently."""
     ...
 
 def filter_for_task(
@@ -431,10 +547,18 @@ def threshold_sensitivity_probe(
     dataset: pd.DataFrame, embeddings: pd.DataFrame, sequences: dict[str, str],
     task: Literal["hc50", "mic"], thresholds: list[float] = [1.0, 0.8, 0.6, 0.4],
 ) -> pd.DataFrame:
-    """ElasticNet on frozen embeddings, re-split at each identity threshold
-    (peptides within `threshold` identity of any test peptide excluded from
-    train), confirm apparent PCC/Spearman rho rises as threshold rises —
-    doc 07 §5 point 3, QMAP's Fig. 3A reproduced on this project's own data.
+    """ElasticNet on frozen embeddings, re-split at each identity threshold:
+    a training peptide is excluded from that threshold's re-split iff its
+    identity to some test peptide is >= `threshold` (doc 07 §2.3's
+    post-filter rule — "exceeds the threshold is removed"). A HIGHER
+    threshold is therefore a HIGHER bar to clear, so FEWER training
+    peptides get excluded at threshold=1.0 (~random split, minimal
+    filtering) than at threshold=0.4 (aggressive filtering, most
+    leakage-safe) — confirm apparent PCC/Spearman rho RISES as threshold
+    RISES from 0.4 towards 1.0 (more allowed train/test homology -> higher
+    apparent performance), matching QMAP's own published Fig. 3A finding
+    (doc 07 §2.3: "as you allow more train/test homology, apparent
+    performance goes up") — doc 07 §5 point 3.
     NOTE: this frozen-probe machinery is the same shape as doc 11 (Phase 3)
     §4's frozen-encoder probe — reuse doc 11's probe function here rather
     than writing a second one, once Phase 3 exists; for Phase 2 alone, an
@@ -472,19 +596,53 @@ Same shape as Phase 1's `datasheet.py` (doc 09 §9): a reporting module, not a t
 
 ## 12. Orchestration (`splitting/pipeline.py`)
 
-Same manifest-file pattern as Phase 1 (doc 09 §10), via the shared `pipeline_utils.py` (§2):
+Same manifest-file pattern as Phase 1 (doc 09 §10), via the shared `pipeline_utils.py` (§2) — with two additions Phase 1 didn't need, both required so this manifest can't silently collide with or under-invalidate against Phase 1's:
+
+**Separate manifest namespace.** Phase 1 owns `data/manifest.json`. This pipeline writes its own `data/manifest_phase2.json` — a distinct file, not shared stage-ID space in the same manifest — so a Phase 2 stage's cache entry can never be confused with (or overwritten by) a same-named Phase 1 stage.
+
+This means `Stage` (doc 09 §10's dataclass: `name`, `run`, `inputs: list[str]`, `output: str`) needs two backward-compatible extensions as part of the §2 `pipeline_utils.py` extraction: an optional `config_keys: list[str] = []` (stage-relevant `Settings` field names to fold into the cache key, empty by default so Phase 1's existing stage entries are unaffected), and an optional `outputs: list[str] | None = None` alongside the existing single-artifact `output: str` (for `validate`'s two declared outputs) — a stage declares one or the other, never both.
+
+**Cache keys include effective config, not just input file hashes.** `pipeline_utils.py`'s content-hash function (doc 09 §10) hashes stage input *files* — sufficient for Phase 1, where a stage's behavior is fully determined by its inputs. Phase 2's stages are not: `cluster` produces different output for the same `peptide_embeddings.parquet` depending on `kmeans_k_min`/`kmeans_k_max`/`kmeans_pca_variance`/`kmeans_min_cluster_size`/`kmeans_random_state_search`, `embed` depends on `embedding_model_revision`, `homology_partition` depends on `homology_identity_threshold`, and `build_folds` depends on `validation_strategy`. Extend the cache-key computation to hash the stage's relevant `Settings` fields alongside its input files, so changing only a config value (no input file touched) still correctly invalidates the stage's cached output instead of being silently skipped as "already done."
 
 ```python
 STAGES: list[Stage] = [
-    Stage("embed", _embed, inputs=["processed/dataset.parquet"], output="embeddings/peptide_embeddings.parquet"),
-    Stage("cluster", _cluster, inputs=["embeddings/peptide_embeddings.parquet"], output="splits/cluster_assignments.parquet"),
-    Stage("homology_partition", _homology, inputs=["processed/dataset.parquet"], output="splits/homology_communities.parquet"),
-    Stage("build_folds", _build_folds, inputs=["splits/cluster_assignments.parquet"], output="splits/folds/"),
-    Stage("validate", _validate, inputs=["splits/folds/", "splits/homology_communities.parquet"], output="splits/split_report.json"),
+    Stage(
+        "embed", _embed,
+        inputs=["processed/dataset.parquet"],
+        config_keys=["embedding_model", "embedding_model_revision", "embedding_batch_size"],
+        output="embeddings/peptide_embeddings.parquet",
+    ),
+    Stage(
+        "cluster", _cluster,
+        inputs=["processed/dataset.parquet", "embeddings/peptide_embeddings.parquet"],
+        config_keys=["kmeans_k_min", "kmeans_k_max", "kmeans_pca_variance",
+                      "kmeans_min_cluster_size", "kmeans_random_state_search"],
+        output="splits/cluster_assignments.parquet",
+    ),
+    Stage(
+        "homology_partition", _homology,
+        inputs=["processed/dataset.parquet"],
+        config_keys=["homology_identity_threshold", "homology_gap_open", "homology_gap_extend"],
+        output="splits/homology_communities.parquet",
+    ),
+    Stage(
+        "build_folds", _build_folds,
+        inputs=["splits/cluster_assignments.parquet"],
+        config_keys=["validation_strategy"],
+        output="splits/folds/",
+    ),
+    Stage(
+        "validate", _validate,
+        inputs=["processed/dataset.parquet", "embeddings/peptide_embeddings.parquet",
+                "splits/folds/", "splits/homology_communities.parquet"],
+        outputs=["splits/split_report.json", "splits/agreement_report.json"],
+    ),
 ]
 ```
 
-`homology_partition` has no dependency on `cluster` (they're independent, run-in-either-order artifacts per §8.4) but `validate` depends on both — the manifest's content-hash mechanism (unchanged from doc 09 §10) handles this correctly since it hashes whatever's actually on disk, not a hardcoded assumption about stage order.
+`cluster` needs `processed/dataset.parquet` declared (not just the embeddings) because `_cluster` reads it for `hc50_labeled_uids` (§7.2's size-floor check). `validate` needs the dataset and embeddings declared too — `label_balance_check`/`composition_check` read the dataset directly and `threshold_sensitivity_probe` reads the embeddings — not just the two artifacts it structurally depends on; leaving them undeclared would let `validate` silently reuse a stale report if the dataset or embeddings changed but folds/communities happened not to. `validate` also declares **both** of its real outputs (`split_report.json` and `agreement_report.json`, §11/§15) — declaring only one would make the undeclared one invisible to the manifest's staleness tracking.
+
+`homology_partition` has no dependency on `cluster` (they're independent, run-in-either-order artifacts per §8.4) but `validate` depends on both — the manifest's content-hash mechanism handles this correctly since it hashes whatever's actually on disk (plus, per above, the relevant config), not a hardcoded assumption about stage order.
 
 ---
 
@@ -556,7 +714,7 @@ data/
 │   ├── cluster_sweep.json             # every (k, random_state) candidate's scores — the full §7.2 table
 │   ├── homology_communities.parquet   # peptide_uid, community_id, method, identity_threshold
 │   ├── folds/
-│   │   └── fold_{i}.parquet           # fold_id, peptide_uid, role, cluster_id — one file per LOCO rotation
+│   │   └── fold_{i}.parquet           # fold_id, peptide_uid, role, partition_id, partition_method — one file per LOCO rotation
 │   ├── agreement_report.json          # ARI between cluster_id and community_id
 │   └── split_report.{json,md}         # §11
 ```

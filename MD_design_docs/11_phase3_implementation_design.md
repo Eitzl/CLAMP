@@ -129,8 +129,9 @@ class ProbeResult(BaseModel):
     candidate: str
     task: Task
     mae: float
-    spearman_rho: float
-    pearson_r: float
+    spearman_rho: float | None    # None iff compute_metrics saw a non-finite value (§10) — a
+                                    # degenerate (near-constant) prediction, not a crash
+    pearson_r: float | None       # same None convention as spearman_rho
     n_train: int
     n_test: int
     wall_clock_s: float
@@ -140,8 +141,9 @@ class FineTuneResult(BaseModel):
     task: Task
     seed: int
     mae: float
-    spearman_rho: float
-    pearson_r: float
+    spearman_rho: float | None    # None iff compute_metrics saw a non-finite value (§10) — a
+                                    # degenerate (near-constant) prediction, not a crash
+    pearson_r: float | None       # same None convention as spearman_rho
     best_epoch: int
     n_train: int
     n_test: int
@@ -152,8 +154,9 @@ class FineTuneResult(BaseModel):
 class BaselineResult(BaseModel):
     task: Task
     mae: float
-    spearman_rho: float
-    pearson_r: float
+    spearman_rho: float | None    # None iff compute_metrics saw a non-finite value (§10) — a
+                                    # degenerate (near-constant) prediction, not a crash
+    pearson_r: float | None       # same None convention as spearman_rho
     n_train: int
     n_test: int
 
@@ -164,8 +167,9 @@ class PilotResult(BaseModel):
     eval_mode: EvalMode
     task: Task
     mae: float
-    spearman_rho: float
-    pearson_r: float
+    spearman_rho: float | None    # None iff compute_metrics saw a non-finite value (§10) — a
+                                    # degenerate (near-constant) prediction, not a crash
+    pearson_r: float | None       # same None convention as spearman_rho
     wall_clock_s: float
 ```
 
@@ -186,7 +190,11 @@ class Settings(BaseSettings):
     pilot_finetune_max_epochs: int = 10
     pilot_finetune_early_stopping_patience: int = 2
     pilot_finetune_seeds: list[int] = [0, 1]   # 1-2 seeds for the pilot; 3 for the eventual winner (doc 05 §4.2)
-    pilot_include_v1: bool = False             # gate for the v1 fallback candidate (§3, §7.3)
+    pilot_include_v1: bool = False             # default for --include-v1 (§7.3/§12) — the CLI flag
+                                                 # always wins if passed explicitly, this is just its default
+    model_revisions: dict[str, str] = {}        # candidate name -> pinned sha (§7.1/§7.4), sourced from
+                                                 # CLAMP_MODEL_REVISIONS_JSON — empty until §7.4's runbook
+                                                 # step has actually been run
 
     @property
     def model_selection_dir(self) -> Path:
@@ -221,11 +229,21 @@ from sklearn.linear_model import ElasticNetCV
 def train_baseline(
     train_df: pd.DataFrame, test_df: pd.DataFrame, task: Task
 ) -> BaselineResult:
-    """Descriptors -> ElasticNetCV (built-in cross-validated regularization
-    search, avoids a separate hyperparameter-sweep harness for what's meant
-    to be a minimal reference bar) -> predict on test_df -> metrics.py.
-    This is the P1 baseline doc 05 §4.2 step 2 and doc 07's source material
-    both refer to — every deep-learning candidate below must clear it."""
+    """Descriptors -> impute -> ElasticNetCV (built-in cross-validated
+    regularization search, avoids a separate hyperparameter-sweep harness
+    for what's meant to be a minimal reference bar) -> predict on test_df
+    -> metrics.py. This is the P1 baseline doc 05 §4.2 step 2 and doc 07's
+    source material both refer to — every deep-learning candidate below
+    must clear it.
+
+    NaN handling: compute_descriptors documents that it NaN-fills rather
+    than raises on a bad row (§6 above), but ElasticNetCV itself rejects
+    NaN input outright — a single bad descriptor would otherwise abort the
+    whole pilot. Fit a `sklearn.impute.SimpleImputer` (median strategy) on
+    `train_df`'s descriptors ONLY, then apply that same fitted imputer to
+    `test_df`'s descriptors before predicting — never fit (or re-fit) the
+    imputer on test_df, which would leak test-set statistics into the
+    training-derived fill values."""
     ...
 ```
 
@@ -238,7 +256,10 @@ def train_baseline(
 ### 7.1 The registry
 
 ```python
-CANDIDATES: list[CandidateModel] = [
+# Registry template committed to source control — note the empty revisions.
+# This is NOT what candidates.py hands to the rest of the pipeline; see
+# resolve_registry() below.
+_CANDIDATE_TEMPLATES: list[CandidateModel] = [
     CandidateModel(name="hybrid-small", hf_repo="aaronfeller/peptideclm-2-hybrid-small",
                    revision="", objective=Objective.HYBRID, params_millions=31.7, loader=LoaderKind.V2_AUTO),
     CandidateModel(name="mtr-small", hf_repo="aaronfeller/peptideclm-2-mtr-small",
@@ -251,9 +272,30 @@ CANDIDATES: list[CandidateModel] = [
                    revision="", objective=None, params_millions=23.0, loader=LoaderKind.V1_CUSTOM,
                    is_fallback=True),
 ]
+
+def resolve_registry(revisions: dict[str, str]) -> list[CandidateModel]:
+    """Returns _CANDIDATE_TEMPLATES with each entry's revision filled in
+    from `revisions` (candidate name -> pinned sha, sourced from
+    `settings.model_revisions` — see §5 — which is itself populated from
+    `.env`/`CLAMP_MODEL_REVISIONS_JSON` once §7.4's runbook step has
+    actually been run). Raises ValueError naming every candidate still
+    missing a revision, pointing at §7.4, rather than silently returning a
+    registry with empty-string revisions for the rest of the pipeline to
+    trip over one candidate at a time."""
+    missing = [c.name for c in _CANDIDATE_TEMPLATES if not revisions.get(c.name)]
+    if missing:
+        raise ValueError(
+            f"No pinned revision for: {', '.join(missing)} — resolve via §7.4's "
+            "resolve_revision() and set settings.model_revisions before running the pilot."
+        )
+    return [c.model_copy(update={"revision": revisions[c.name]}) for c in _CANDIDATE_TEMPLATES]
+
+CANDIDATES: list[CandidateModel] = resolve_registry(settings.model_revisions)
 ```
 
-Every `revision=""` above is a placeholder exactly like doc 10 §6.4's `embedding_model_revision` — **every loader in §7.2/§7.3 must refuse to run against an unresolved revision**, for the same supply-chain reason (§7.4). This registry is the literal reproduction of doc 05 §4.1's candidate table — four `hybrid-small`/`mtr-small`/`mlm-small`/`mlm-large` core candidates plus v1, no `base`-tier candidates in the default grid (doc 05 §4.1's note that the full 3×3 v2 grid is affordable if compute allows — see §7.5 for how to opt into it).
+This is the operational split CodeRabbit's review asked for: `_CANDIDATE_TEMPLATES` (committed, `revision=""` placeholders — there is no way to commit a real sha for a model that hasn't been pinned yet) is deliberately **not** what the rest of the pipeline imports. `CANDIDATES` is what `§7.2`/`§7.3`/everything downstream actually uses, and it either contains real pinned revisions or `resolve_registry` raises immediately at import time — the same fail-loud-don't-float principle as doc 10 §6.4, just enforced at construction instead of scattered across every loader. This also means the registry-validation test (§14) can be a normal, always-green test of `resolve_registry`'s own logic (feed it a fixture `revisions` dict, confirm it fills in correctly; feed it an incomplete one, confirm it raises naming the right candidates) rather than a test that's permanently red against the real committed templates until a human intervenes — see §14's updated row.
+
+This registry is the literal reproduction of doc 05 §4.1's candidate table — four `hybrid-small`/`mtr-small`/`mlm-small`/`mlm-large` core candidates plus v1, no `base`-tier candidates in the default grid (doc 05 §4.1's note that the full 3×3 v2 grid is affordable if compute allows — see §7.5 for how to opt into it).
 
 ### 7.2 v2 loader — reuses Phase 2's `embed.py`, doesn't duplicate it
 
@@ -285,7 +327,7 @@ def load_v1(candidate: CandidateModel, peptideclm_v1_repo_path: Path):
     ...
 ```
 
-Only invoked when `settings.pilot_include_v1` is set **and** `--include-v1` is passed to the CLI (§12) — doc 05 §6.5's explicit warning not to pay this setup tax "merely because it's the known quantity" is enforced here as an opt-in flag, not a default grid member, even though doc 05 §4.1 also says "worth pricing in now rather than after committing to v2." Both are honored: v1 is in the registry (priced in, ready to run) but off by default (not paid for unless a real trigger condition from doc 05 §6.5 applies — v2 loading breaks entirely, or v2 underperforms the baseline).
+Only invoked when the `--include-v1` CLI flag (§12) is set — that flag is the **single, authoritative** gate; `settings.pilot_include_v1` is merely its default value (so automation can set `CLAMP_PILOT_INCLUDE_V1=true` to always run v1, without requiring the flag on every invocation) but passing `--include-v1` explicitly on the command line always enables v1 regardless of the settings value. There is deliberately no scenario where both a settings flag AND a CLI flag must independently agree before v1 runs — doc 05 §6.5's "rerun with `--include-v1`" runbook instruction (§13 step 7) must reliably enable v1 by itself. This enforces doc 05 §6.5's explicit warning not to pay v1's setup tax "merely because it's the known quantity" as an opt-in, not a default grid member, even though doc 05 §4.1 also says "worth pricing in now rather than after committing to v2." Both are honored: v1 is in the registry (priced in, ready to run) but off by default (not paid for unless a real trigger condition from doc 05 §6.5 applies — v2 loading breaks entirely, or v2 underperforms the baseline).
 
 ### 7.4 Resolving revisions — the same blocking runbook step as Phase 2
 
@@ -294,9 +336,17 @@ from huggingface_hub import HfApi
 
 def resolve_revision(hf_repo: str) -> str:
     return HfApi().model_info(hf_repo).sha
+
+def resolve_all_revisions() -> dict[str, str]:
+    """Runs resolve_revision for every _CANDIDATE_TEMPLATES entry, returning
+    the {name: sha} mapping that goes into CLAMP_MODEL_REVISIONS_JSON /
+    settings.model_revisions (§5) — a small CLI-runnable helper (`clamp-pilot
+    resolve-revisions`, §12) so this is a one-command runbook step, not five
+    manual copy-pastes."""
+    return {c.name: resolve_revision(c.hf_repo) for c in _CANDIDATE_TEMPLATES}
 ```
 
-Run once per candidate as part of the pilot runbook (§13, step 1) — same reasoning as doc 10 §6.4, restated because this phase introduces four *more* `trust_remote_code=True` loads (one per v2 candidate) that each need their own pinned sha, not just the one Phase 2 already pinned for `hybrid-small`.
+Run once as part of the pilot runbook (§13, step 1) — same reasoning as doc 10 §6.4, restated because this phase introduces four *more* `trust_remote_code=True` loads (one per v2 candidate) that each need their own pinned sha, not just the one Phase 2 already pinned for `hybrid-small`. The resulting mapping is set via `CLAMP_MODEL_REVISIONS_JSON` (or written directly into `.env`), never hand-edited into `_CANDIDATE_TEMPLATES` itself — keeping the resolved shas out of the committed registry is exactly what lets `resolve_registry` (§7.1) fail loudly instead of silently running against a stale or guessed sha.
 
 ### 7.5 Opting into the full grid
 
@@ -378,19 +428,50 @@ def finetune_candidate(
 
 ```python
 # metrics.py
+import math
 from scipy.stats import spearmanr, pearsonr
 from sklearn.metrics import mean_absolute_error
 
 def compute_metrics(y_true: np.ndarray, y_pred: np.ndarray) -> dict:
+    """Finite-metric policy: pearsonr/spearmanr return NaN for a constant
+    (or too-small) y_pred — e.g. a candidate whose fine-tune collapsed to
+    predicting the mean. Rather than let a NaN silently propagate into
+    ranking/sorting (where NaN comparisons are not just wrong but
+    order-dependent), store an explicit None for that metric. mae is never
+    None — mean_absolute_error is always finite for finite inputs, so a
+    degenerate correlation doesn't erase the one metric that still measures
+    something."""
+    spearman = spearmanr(y_true, y_pred).statistic
+    pearson = pearsonr(y_true, y_pred)[0]
     return {
         "mae": mean_absolute_error(y_true, y_pred),
-        "spearman_rho": spearmanr(y_true, y_pred).statistic,
-        "pearson_r": pearsonr(y_true, y_pred)[0],
+        "spearman_rho": spearman if math.isfinite(spearman) else None,
+        "pearson_r": pearson if math.isfinite(pearson) else None,
     }
 ```
 
 ```python
 # decision.py
+class CandidateStatus(StrEnum):
+    SUCCEEDED = "succeeded"          # has PilotResult rows for every required task/eval_mode
+    LOAD_FAILED = "load_failed"      # candidates.load_v2/load_v1 raised
+    SKIPPED = "skipped"              # not run this invocation (e.g. v1 without --include-v1)
+    INCOMPLETE = "incomplete"        # started but missing a required task/eval_mode result
+
+class CandidateOutcome(BaseModel):
+    """One entry per candidate actually considered this run — the unit
+    rank_candidates operates on, instead of raw PilotResult rows, so it can
+    tell a candidate that was never attempted (SKIPPED) apart from one that
+    was attempted and broke (LOAD_FAILED) apart from one that's missing a
+    task's result for some other reason (INCOMPLETE). This is what makes
+    doc 05 §6.5's escalation conditions ("all v2 loads failed") actually
+    checkable — inferring it from an absent PilotResult can't distinguish
+    those three cases."""
+    candidate: str
+    status: CandidateStatus
+    error: str | None = None                  # set when status == LOAD_FAILED
+    pilot_results: list[PilotResult] = []      # populated only when status == SUCCEEDED
+
 class DecisionResult(BaseModel):
     winner: str
     task_scores: dict[Task, dict[str, float]]     # winner's own metrics per task
@@ -398,11 +479,23 @@ class DecisionResult(BaseModel):
     rationale: str
     escalated_to_v1: bool
     escalation_reason: str | None
+    candidate_statuses: dict[str, CandidateStatus]   # every considered candidate's final status,
+                                                       # so the report (§11) can show why a
+                                                       # candidate is absent from the ranking
 
-def rank_candidates(pilot_results: list[PilotResult], baseline: list[BaselineResult]) -> DecisionResult:
+def rank_candidates(
+    outcomes: list[CandidateOutcome], baseline: list[BaselineResult], v2_candidate_names: list[str]
+) -> DecisionResult:
     """Doc 05 §4.2 step 5's decision gate, made concrete:
-    1. Drop any candidate that does not clear the baseline on BOTH tasks'
-       full-fine-tune pass by a non-trivial margin (a fixed, documented
+    0. Require an outcome for every name in v2_candidate_names (the active
+       v2 registry for this run) before proceeding — a missing outcome is a
+       bug (a candidate that was neither run nor explicitly marked SKIPPED),
+       not a silent 'treat as failed.'
+    1. Among outcomes with status == SUCCEEDED: drop any candidate whose
+       full-fine-tune spearman_rho is None on either task (an unrankable,
+       degenerate result counts as NOT clearing the baseline — never
+       compared as if it were a real number), or that does not clear the
+       baseline on BOTH tasks by a non-trivial margin (a fixed, documented
        epsilon — not zero, since a marginal win within noise isn't a real
        clearance).
     2. Among survivors, score = (mean task Spearman rho improvement over
@@ -414,9 +507,12 @@ def rank_candidates(pilot_results: list[PilotResult], baseline: list[BaselineRes
        to the string 'none' and `rationale` states this explicitly — doc 05
        §4.2 step 5's 'if nothing clears the baseline, that's a real
        finding' is a valid, reportable outcome, not a pipeline failure.
-    4. escalated_to_v1 is True only if triggered by doc 05 §6.5's exact
-       conditions (all v2 loads failed, or v2 underperforms baseline while
-       v1 doesn't) — never merely because v1 was included in the grid."""
+    4. escalated_to_v1 is True only if triggered by doc 05 §6.5's exact,
+       now-checkable conditions: either every v2_candidate_names outcome
+       has status == LOAD_FAILED, or every SUCCEEDED v2 candidate failed
+       step 1's baseline clearance while a separately-run v1
+       CandidateOutcome (status == SUCCEEDED) does clear it — never merely
+       because v1 was included in `outcomes`."""
     ...
 ```
 
@@ -426,6 +522,7 @@ def rank_candidates(pilot_results: list[PilotResult], baseline: list[BaselineRes
 
 Same shape as doc 09's `datasheet.py` and doc 10's `report.py`: emits `model_selection/pilot_report.json` and `model_selection/pilot_report.md` from one underlying data structure. Contents:
 - The full pilot grid table (every `PilotResult` row: candidate × eval mode × task).
+- Every candidate's final status (`DecisionResult.candidate_statuses`) — including SKIPPED/LOAD_FAILED/INCOMPLETE ones, so a reader can see *why* a candidate is missing from the ranking rather than just its absence.
 - The baseline's own scores per task.
 - `DecisionResult` — the winner, its margin over baseline, and the rationale.
 - Which pilot fold (`pilot_fold_id`) was used, and the `transformers`/`torch` versions the run executed against (doc 05 §7's "first concrete task... log the transformers version it worked against").
@@ -448,13 +545,22 @@ clamp-pilot = "clamp.model_selection.cli:app"
 ```python
 app = typer.Typer()
 
+@app.command(name="resolve-revisions")
+def resolve_revisions_cmd() -> None:
+    """Runs §7.4's resolve_all_revisions() and prints the {name: sha}
+    mapping as JSON, ready to paste into CLAMP_MODEL_REVISIONS_JSON — the
+    one-command form of runbook step 1 (§13)."""
+    ...
+
 @app.command()
 def baseline() -> None: ...
 
 @app.command()
-def probe(candidate: str, include_v1: bool = False) -> None:
-    """Run the frozen probe for one candidate, or all candidates in the
-    default (or --full) grid if candidate == 'all'."""
+def probe(candidate: str, full: bool = False, include_v1: bool = False) -> None:
+    """Run the frozen probe for one candidate, or every candidate in the
+    default grid (or the full grid if --full) if candidate == 'all'.
+    include_v1 defaults from settings.pilot_include_v1 but --include-v1
+    passed here always wins (§7.3)."""
     ...
 
 @app.command()
@@ -466,7 +572,14 @@ def run_grid(full: bool = False, include_v1: bool = False) -> None:
     registry (§7.5), writing pilot_results.parquet incrementally so a
     partial run (e.g. interrupted mid-grid) isn't fully lost — mirrors
     Phase 1's resumable-pull philosophy (doc 09 §5) applied to a compute
-    grid instead of an API pull."""
+    grid instead of an API pull. Also writes candidate_outcomes.json (§10,
+    §15): every candidate not selected this run (v1 without --include-v1)
+    gets a CandidateOutcome(status=SKIPPED); a candidate whose load_v2/
+    load_v1 call raises gets LOAD_FAILED with the exception recorded in
+    `error`, and run_grid continues with the remaining candidates rather
+    than aborting the whole grid; a candidate missing a required task/
+    eval_mode result at the end of the run gets INCOMPLETE. Only a
+    candidate with every required PilotResult row gets SUCCEEDED."""
     ...
 
 @app.command()
@@ -477,10 +590,10 @@ def report() -> None: ...
 
 ## 13. Runbook (execution order for Phase 3)
 
-1. **Resolve and pin every candidate's revision** (§7.4) — for each of the four v2 `CANDIDATES` entries, run `resolve_revision`, confirm `AutoModel.from_pretrained(..., trust_remote_code=True, revision=<sha>)` actually loads, and log the `transformers` version that worked (doc 05 §7's literal first concrete task). Set the four resolved shas in `.env` or directly in `candidates.py`.
+1. **Resolve and pin every candidate's revision** (§7.4) — run `clamp-pilot resolve-revisions` (or `resolve_all_revisions()` directly), confirm `AutoModel.from_pretrained(..., trust_remote_code=True, revision=<sha>)` actually loads for each, and log the `transformers` version that worked (doc 05 §7's literal first concrete task). Set the resulting mapping via `CLAMP_MODEL_REVISIONS_JSON` in `.env` — never hand-edit a sha into `_CANDIDATE_TEMPLATES` (§7.1) itself.
 2. Confirm Phase 2's `data/splits/folds/fold_0.parquet` (or whichever `pilot_fold_id`) exists — this doc has no fallback if Phase 2 hasn't produced real folds yet.
 3. `clamp-pilot baseline` — establishes the floor every candidate must clear.
-4. `clamp-pilot run-grid` — runs the default 5-candidate (4 v2 + v1 registered-but-off-by-default) grid's frozen-probe pass for all, then the full-fine-tune pass for the 4 v2 candidates (v1 skipped unless `--include-v1`).
+4. `clamp-pilot run-grid` — by default, runs both the frozen-probe pass and the full-fine-tune pass for the **4 v2 candidates only**. `CANDIDATES` has 5 entries (registry membership includes v1), but v1 is excluded from every default-run stage — probe and fine-tune alike — unless `--include-v1` is passed. "5 candidates" refers to what's registered, not what executes by default.
 5. **Inspect the frozen-probe numbers**, but per doc 05 §4.2 don't eliminate anything based on them alone — expect them to be uniformly weak.
 6. **Inspect the full-fine-tune numbers** — this is the real signal (doc 05 §3's "frozen-embedding probing... was found weak" finding from the paper itself).
 7. If no v2 candidate clears the baseline, or a v2 load broke entirely and couldn't be fixed quickly, re-run step 4 with `--include-v1` per doc 05 §6.5's exact escalation conditions — first completing the v1 setup (`git clone github.com/AaronFeller/PeptideCLM`, confirm `sys.path` wiring per §7.3) if it hasn't been done yet.
@@ -495,13 +608,13 @@ def report() -> None: ...
 |---|---|---|
 | `descriptors.compute_descriptors` | Unit tests against a handful of real, simple SMILES (glycine, a short synthetic peptide) with hand-checked MW/LogP sanity bounds | Cheap, RDKit does the real work; confirms the wiring, not RDKit's own correctness. |
 | `baseline.train_baseline` | Unit test on synthetic descriptor/label data with a known linear relationship — confirm `ElasticNetCV` recovers it and `BaselineResult`'s fields are populated correctly | Pure sklearn logic; no need for real peptide data to validate the plumbing. |
-| `candidates.CANDIDATES` registry | A validation test asserting every entry has a non-empty `name`/`hf_repo`, and a **separate, explicitly-skipped-by-default** test that asserts every `revision` is non-empty (this test is expected to fail until §7.4's runbook step has actually been done — that's the point: it's a checked reminder, not a always-green no-op) | Directly enforces doc 10/doc 05's "don't run against an unpinned revision" rule at the registry level, not just as a docstring. |
+| `candidates.resolve_registry` | A normal (always-run, always-expected-to-pass) test asserting: every `_CANDIDATE_TEMPLATES` entry has a non-empty `name`/`hf_repo`; given a fixture `revisions` dict covering every template name, `resolve_registry` returns entries with the matching non-empty `revision`; given an incomplete `revisions` dict, it raises `ValueError` naming exactly the missing candidates | Tests the *validation logic* deterministically — unlike a test asserting the real, unresolved `_CANDIDATE_TEMPLATES` have non-empty revisions (which would be permanently red until a human runs §7.4, conflicting with "pytest passes for the full suite," §17), this passes in CI immediately while still enforcing doc 10/doc 05's "don't run against an unpinned revision" rule at the registry level. |
 | `candidates.load_v2`/`load_v1` | Mocked — monkeypatch `clamp.splitting.embed.load_encoder` (for v2) and the `sys.path`/`SMILES_SPE_Tokenizer` import (for v1) to return a tiny fake tokenizer/model pair; confirm the right loader is dispatched per `CandidateModel.loader` | Never load a real multi-hundred-MB checkpoint in CI; confirms dispatch logic only. |
 | `probe.frozen_probe` | Unit test on synthetic embeddings + labels with a known separable structure, both `train_mask`/`test_mask` variants | Pure sklearn logic on synthetic data — same philosophy as doc 10 §14's cluster tests. |
 | `finetune.should_stop` (early-stopping helper, §9.2) | Parametrized `pytest` cases: a strictly-improving history never stops, a flat/degrading history for exactly `patience` epochs stops, an improve-then-plateau history stops at the right epoch | This is the one piece of the real training loop that's meaningfully testable without a GPU or a real model — isolate it precisely so it can be. |
 | `finetune.PilotRegressionHead.forward` | A forward-pass shape/gradient-flow test using a tiny fake encoder (a `nn.Embedding` + `nn.Linear` stand-in returning a `last_hidden_state`-shaped tensor) — confirm output shape is `(batch,)` and gradients reach the fake encoder's parameters | Confirms the mean-pool-with-gradients wiring (doc 10 §6.2's forward-compat claim) actually holds, without needing PeptideCLM-2 itself. |
 | `metrics.compute_metrics` | Unit tests against small arrays with hand-computed MAE/Spearman/Pearson | Cheap, scipy/sklearn do the real math; confirms correct field mapping. |
-| `decision.rank_candidates` | Unit tests covering: a clear winner clears baseline on both tasks; nothing clears baseline (confirm `winner == "none"`, not an exception); a tie-breaking-by-compute-cost case; an escalation-triggered case (v2 candidates all marked as failed-to-load) | This is the actual decision logic doc 05 §6 spells out as a numbered rule list — worth a regression test per numbered condition, not just a happy-path test. |
+| `decision.rank_candidates` | Unit tests covering: a clear winner clears baseline on both tasks; nothing clears baseline (confirm `winner == "none"`, not an exception); a tie-breaking-by-compute-cost case; an escalation-triggered case built from explicit `CandidateOutcome(status=LOAD_FAILED)` entries (not inferred from missing `PilotResult`s); a `SKIPPED` v1 outcome correctly excluded from ranking without affecting escalation; a `None` `spearman_rho` (degenerate prediction) correctly treated as non-clearing rather than crashing or sorting as if it were a number; a missing outcome for a `v2_candidate_names` entry raising rather than being silently skipped | This is the actual decision logic doc 05 §6 spells out as a numbered rule list, now including the status-distinction and finite-metric fixes — worth a regression test per condition, not just a happy-path test. |
 | `report.py` | Snapshot-style test: fixed synthetic `PilotResult`/`DecisionResult` inputs produce `pilot_report.json`/`.md` whose numbers agree | Same drift-prevention rationale as docs 09/10. |
 
 **Fixtures:** a tiny synthetic "fake encoder" (a couple of `nn.Module` layers producing embed-dim-shaped output from token ids) reused across `test_candidates.py`, `test_probe.py`, and `test_finetune.py` — this stands in for every real PeptideCLM-2 checkpoint in the test suite, exactly as doc 10 §14 uses a fake encoder for `embed_dataset`'s tests.
@@ -516,7 +629,10 @@ def report() -> None: ...
 data/
 └── model_selection/
     ├── baseline_results.json          # BaselineResult per task
-    ├── pilot_results.parquet          # every PilotResult row (candidate x eval_mode x task)
+    ├── pilot_results.parquet          # every successful PilotResult row (candidate x eval_mode x task)
+    ├── candidate_outcomes.json         # one CandidateOutcome per candidate considered this run
+                                         # (§10) — SUCCEEDED/LOAD_FAILED/SKIPPED/INCOMPLETE, the
+                                         # decision stage's actual input, not pilot_results.parquet directly
     ├── finetune_runs/
     │   └── {candidate}_{task}_seed{n}.json   # full FineTuneResult, one file per run, written incrementally
     ├── decision.json                   # DecisionResult
@@ -536,8 +652,8 @@ STAGES: list[Stage] = [
     Stage("baseline", _baseline, inputs=["splits/folds/", "processed/dataset.parquet"],
           output="model_selection/baseline_results.json"),
     Stage("run_grid", _run_grid, inputs=["splits/folds/", "processed/dataset.parquet"],
-          output="model_selection/pilot_results.parquet"),
-    Stage("decision", _decision, inputs=["model_selection/pilot_results.parquet", "model_selection/baseline_results.json"],
+          outputs=["model_selection/pilot_results.parquet", "model_selection/candidate_outcomes.json"]),
+    Stage("decision", _decision, inputs=["model_selection/candidate_outcomes.json", "model_selection/baseline_results.json"],
           output="model_selection/decision.json"),
     Stage("report", _report, inputs=["model_selection/decision.json"],
           output="model_selection/pilot_report.json"),
