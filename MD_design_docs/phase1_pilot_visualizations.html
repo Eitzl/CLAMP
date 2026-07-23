@@ -1,0 +1,961 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CLAMP Phase 1 Pilot — Dataset Visualizations</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🧬</text></svg>">
+<style>
+  /* ============ Design tokens (dataviz skill reference palette) ============ */
+  :root{
+    color-scheme: light;
+    --page:            #f9f9f7;
+    --surface-1:       #fcfcfb;
+    --surface-2:       #ffffff;
+    --text-primary:    #0b0b0b;
+    --text-secondary:  #52514e;
+    --text-muted:      #898781;
+    --gridline:        #e1e0d9;
+    --baseline:        #c3c2b7;
+    --border:          rgba(11,11,11,0.10);
+    --border-strong:   rgba(11,11,11,0.16);
+
+    /* categorical: source identity, fixed order (slots 1,2,3,4,5) */
+    --s-dbaasp:     #2a78d6;
+    --s-dramp:      #eb6834;
+    --s-hemolytik2: #1baf7a;
+    --s-hemopi2:    #eda100;
+    --s-qmap:       #e87ba4;
+
+    /* sequential (blue) for magnitude ramps: heatmap, plain single-hue bars */
+    --seq-100: #cde2fb; --seq-200: #9ec5f4; --seq-300: #6da7ec;
+    --seq-400: #3987e5; --seq-450:#2a78d6; --seq-500: #256abf; --seq-600: #184f95; --seq-700: #0d366b;
+
+    /* status: fixed, never themed */
+    --st-good:     #0ca30c;
+    --st-warning:  #fab219;
+    --st-serious:  #ec835a;
+    --st-critical: #d03b3b;
+
+    --radius: 14px;
+    --radius-sm: 8px;
+    --shadow: 0 1px 2px rgba(11,11,11,0.04), 0 6px 20px rgba(11,11,11,0.05);
+  }
+  @media (prefers-color-scheme: dark){
+    :root:where(:not([data-theme="light"])){
+      color-scheme: dark;
+      --page:            #0d0d0d;
+      --surface-1:       #1a1a19;
+      --surface-2:       #202020;
+      --text-primary:    #ffffff;
+      --text-secondary:  #c3c2b7;
+      --text-muted:      #898781;
+      --gridline:        #2c2c2a;
+      --baseline:        #383835;
+      --border:          rgba(255,255,255,0.10);
+      --border-strong:   rgba(255,255,255,0.18);
+
+      --s-dbaasp:     #3987e5;
+      --s-dramp:      #d95926;
+      --s-hemolytik2: #199e70;
+      --s-hemopi2:    #c98500;
+      --s-qmap:       #d55181;
+
+      --seq-100: #184f95; --seq-200: #1c5cab; --seq-300: #256abf;
+      --seq-400: #3987e5; --seq-450:#5598e7; --seq-500: #6da7ec; --seq-600: #9ec5f4; --seq-700: #cde2fb;
+    }
+  }
+  :root[data-theme="dark"]{
+    color-scheme: dark;
+    --page:            #0d0d0d;
+    --surface-1:       #1a1a19;
+    --surface-2:       #202020;
+    --text-primary:    #ffffff;
+    --text-secondary:  #c3c2b7;
+    --text-muted:      #898781;
+    --gridline:        #2c2c2a;
+    --baseline:        #383835;
+    --border:          rgba(255,255,255,0.10);
+    --border-strong:   rgba(255,255,255,0.18);
+
+    --s-dbaasp:     #3987e5;
+    --s-dramp:      #d95926;
+    --s-hemolytik2: #199e70;
+    --s-hemopi2:    #c98500;
+    --s-qmap:       #d55181;
+
+    --seq-100: #184f95; --seq-200: #1c5cab; --seq-300: #256abf;
+    --seq-400: #3987e5; --seq-450:#5598e7; --seq-500: #6da7ec; --seq-600: #9ec5f4; --seq-700: #cde2fb;
+  }
+
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;}
+  body{
+    background:var(--page);
+    color:var(--text-primary);
+    font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+    -webkit-font-smoothing:antialiased;
+    line-height:1.45;
+  }
+  .wrap{max-width:1180px;margin:0 auto;padding:28px 20px 80px;}
+
+  header.top{display:flex;align-items:flex-start;justify-content:space-between;gap:20px;margin-bottom:6px;flex-wrap:wrap;}
+  header.top h1{font-size:26px;margin:0 0 6px;letter-spacing:-0.01em;}
+  header.top p{margin:0;color:var(--text-secondary);font-size:14.5px;max-width:720px;}
+  .meta-pill{font-size:12px;color:var(--text-muted);border:1px solid var(--border);border-radius:999px;padding:5px 12px;white-space:nowrap;}
+
+  .theme-toggle{
+    border:1px solid var(--border-strong); background:var(--surface-1); color:var(--text-secondary);
+    border-radius:999px; padding:6px 14px; font-size:12.5px; cursor:pointer; display:flex; gap:6px; align-items:center;
+  }
+  .theme-toggle:hover{color:var(--text-primary); border-color:var(--text-muted);}
+
+  .caveat{
+    margin:18px 0 34px; padding:12px 16px; border-radius:var(--radius-sm);
+    background:var(--surface-1); border:1px solid var(--border); font-size:13px; color:var(--text-secondary);
+  }
+  .caveat b{color:var(--text-primary);}
+
+  /* KPI row */
+  .kpi-row{display:grid; grid-template-columns:repeat(5,1fr); gap:12px; margin-bottom:38px;}
+  @media (max-width:900px){.kpi-row{grid-template-columns:repeat(2,1fr);}}
+  .kpi{
+    background:var(--surface-1); border:1px solid var(--border); border-radius:var(--radius);
+    padding:16px 16px 14px; box-shadow:var(--shadow);
+  }
+  .kpi .label{font-size:12px; color:var(--text-muted); margin-bottom:6px;}
+  .kpi .value{font-size:26px; font-weight:600; letter-spacing:-0.01em;}
+  .kpi .sub{font-size:12px; color:var(--text-secondary); margin-top:4px;}
+
+  section{margin-bottom:50px;}
+  .sec-head{margin-bottom:16px;}
+  .sec-head .kicker{font-size:11.5px; text-transform:uppercase; letter-spacing:0.06em; color:var(--text-muted); font-weight:600; margin-bottom:4px;}
+  .sec-head h2{font-size:19px; margin:0 0 6px; letter-spacing:-0.01em;}
+  .sec-head p{margin:0; color:var(--text-secondary); font-size:14px; max-width:800px;}
+
+  .grid2{display:grid; grid-template-columns:1fr 1fr; gap:18px;}
+  @media (max-width:880px){.grid2{grid-template-columns:1fr;}}
+
+  .card{
+    background:var(--surface-1); border:1px solid var(--border); border-radius:var(--radius);
+    padding:18px 20px 16px; box-shadow:var(--shadow);
+  }
+  .card h3{font-size:14.5px; margin:0 0 2px; font-weight:600;}
+  .card .card-sub{font-size:12.5px; color:var(--text-muted); margin-bottom:12px;}
+  .chart-scroll{overflow-x:auto; -webkit-overflow-scrolling:touch;}
+  .chart-scroll svg{display:block;}
+
+  .legend{display:flex; flex-wrap:wrap; gap:14px; margin:10px 0 2px; font-size:12.5px; color:var(--text-secondary);}
+  .legend .item{display:flex; align-items:center; gap:6px;}
+  .legend .swatch{width:10px;height:10px;border-radius:2.5px;flex:none;}
+  .legend .swatch.line{width:14px;height:2px;border-radius:1px;}
+
+  svg text{font-family:system-ui,-apple-system,"Segoe UI",sans-serif;}
+  .axis-label{fill:var(--text-muted); font-size:11px;}
+  .cat-label{fill:var(--text-secondary); font-size:12px;}
+  .val-label{fill:var(--text-primary); font-size:11.5px; font-weight:600;}
+  .val-label-muted{fill:var(--text-secondary); font-size:11px;}
+  .gridline{stroke:var(--gridline); stroke-width:1;}
+  .baseline{stroke:var(--baseline); stroke-width:1;}
+
+  .hit{cursor:pointer;}
+  .hit:focus{outline:2px solid var(--text-muted); outline-offset:2px;}
+
+  details.tv{margin-top:10px;}
+  details.tv > summary{
+    cursor:pointer; font-size:12px; color:var(--text-muted); list-style:none; user-select:none;
+    display:inline-flex; align-items:center; gap:5px;
+  }
+  details.tv > summary::-webkit-details-marker{display:none;}
+  details.tv > summary::before{content:"▸"; font-size:10px; display:inline-block; transition:transform .15s;}
+  details.tv[open] > summary::before{transform:rotate(90deg);}
+  details.tv > summary:hover{color:var(--text-primary);}
+  .tv-table-wrap{overflow-x:auto; margin-top:8px;}
+  table.tv-table{border-collapse:collapse; width:100%; font-size:12.5px;}
+  table.tv-table th, table.tv-table td{
+    text-align:right; padding:6px 10px; border-bottom:1px solid var(--gridline);
+    font-variant-numeric:tabular-nums; white-space:nowrap;
+  }
+  table.tv-table th:first-child, table.tv-table td:first-child{text-align:left; font-variant-numeric:normal;}
+  table.tv-table th{color:var(--text-muted); font-weight:600; font-size:11.5px;}
+  table.tv-table td{color:var(--text-secondary);}
+  table.tv-table tr:last-child td{border-bottom:none;}
+
+  .status-chip{display:inline-flex; align-items:center; gap:5px; font-size:12px;}
+  .status-chip .dot{width:9px;height:9px;border-radius:50%;flex:none;}
+  .status-chip .icon{font-size:11px; line-height:1;}
+
+  .tooltip{
+    position:fixed; pointer-events:none; z-index:50; background:var(--surface-2); color:var(--text-primary);
+    border:1px solid var(--border-strong); border-radius:8px; padding:8px 11px; font-size:12.5px;
+    box-shadow:0 4px 18px rgba(0,0,0,0.18); max-width:260px; opacity:0; transition:opacity .08s;
+    transform:translate(-50%,calc(-100% - 12px));
+  }
+  .tooltip.show{opacity:1;}
+  .tooltip .tt-title{font-weight:600; margin-bottom:3px;}
+  .tooltip .tt-row{display:flex; justify-content:space-between; gap:14px; color:var(--text-secondary);}
+  .tooltip .tt-row .v{color:var(--text-primary); font-weight:600; font-variant-numeric:tabular-nums;}
+  .tooltip .tt-key{display:inline-block;width:8px;height:8px;border-radius:2px;margin-right:6px;}
+
+  .findings{
+    background:var(--surface-1); border:1px solid var(--border); border-radius:var(--radius);
+    padding:22px 24px; margin-top:8px;
+  }
+  .findings h2{font-size:18px; margin:0 0 12px;}
+  .findings ol{margin:0; padding-left:22px; color:var(--text-secondary); font-size:13.5px;}
+  .findings li{margin-bottom:10px;}
+  .findings b{color:var(--text-primary);}
+  .findings code{background:var(--surface-2); border:1px solid var(--border); border-radius:4px; padding:1px 5px; font-size:12px;}
+
+  footer{margin-top:50px; padding-top:18px; border-top:1px solid var(--border); font-size:12px; color:var(--text-muted);}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header class="top">
+    <div>
+      <h1>CLAMP Phase 1 pilot — dataset visualizations</h1>
+      <p>6,776-row stratified sample of a 90,697-row pull across five AMP/hemolysis sources (DBAASP, DRAMP, Hemolytik2, HemoPI2, QMAP), pulled 2026-07-22 for PeptideCLM-2 transfer-learning work. Sampling kept <b style="color:var(--text-primary)">all</b> HC50-labeled rows and capped MIC-only / unlabeled rows per source — so raw counts below are <b style="color:var(--text-primary)">not proportional</b> to the full pull (see callout).</p>
+    </div>
+    <div style="display:flex; gap:10px; align-items:center;">
+      <span class="meta-pill" id="rowcount-pill">6,776 rows</span>
+      <button class="theme-toggle" id="themeToggle" type="button" aria-label="Toggle color theme">
+        <span aria-hidden="true">◐</span><span id="themeToggleLabel">Auto theme</span>
+      </button>
+    </div>
+  </header>
+
+  <div class="caveat">
+    <b>Reading this page:</b> every color that encodes a <i>source</i> (DBAASP / DRAMP / Hemolytik2 / HemoPI2 / QMAP) is fixed across every chart on this page — same hue, same source, everywhere. Every chart below has hover/focus tooltips and a "View as table" twin for the exact numbers. Charts compare <i>this sample</i>, not the full 90,697-row pull — the full-pull source shares (§1 of the companion report) are roughly DBAASP 1.2% / DRAMP 12.9% / Hemolytik2 7.1% / HemoPI2 2.1% / QMAP 76.7%, quite different from the sample's mix below because HC50 rows (rare in the full pull) were deliberately over-sampled.
+  </div>
+
+  <div class="kpi-row" id="kpiRow"></div>
+
+  <!-- ============ SECTION 1: composition + label coverage ============ -->
+  <section id="sec-composition">
+    <div class="sec-head">
+      <div class="kicker">Composition</div>
+      <h2>What's in the sample, and who actually has labels</h2>
+      <p>Row counts reflect the sampling strategy, not the underlying corpus (caveat above). The more informative view is at the <b>peptide level</b>: because dedup merges cross-source records sharing a <code>peptide_uid</code>, a peptide can carry a label it didn't itself measure — DRAMP and Hemolytik2 contribute zero raw MIC values, yet a share of their peptides show ≥1 MIC value borrowed from a co-occurring DBAASP/QMAP record.</p>
+    </div>
+    <div class="grid2">
+      <div class="card">
+        <h3>Rows per source (this sample)</h3>
+        <div class="card-sub">n = 6,776 · stratified, not proportional to the full pull</div>
+        <div class="chart-scroll"><svg id="chartSourceCounts"></svg></div>
+      </div>
+      <div class="card">
+        <h3>Peptide-level label coverage, by source of origin</h3>
+        <div class="card-sub">% of each source's unique peptides that end up with ≥1 MIC / HC50 value, after cross-source dedup</div>
+        <div class="chart-scroll"><svg id="chartLabelCoverage"></svg></div>
+        <div class="legend" id="legendLabelCoverage"></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ SECTION 2: quality ============ -->
+  <section id="sec-quality">
+    <div class="sec-head">
+      <div class="kicker">Quality</div>
+      <h2>Chemical fidelity and label-quality flags, by source</h2>
+      <p>Fidelity tier (does the SMILES conversion round-trip cleanly?) and quality flag (did dedup/normalize flag this row?) vary sharply by source — HemoPI2 is uniformly clean on both; Hemolytik2 and QMAP carry the bulk of the friction.</p>
+    </div>
+    <div class="grid2">
+      <div class="card">
+        <h3>Chemical fidelity tier</h3>
+        <div class="card-sub">share of each source's sampled rows, by SMILES-conversion outcome</div>
+        <div class="chart-scroll"><svg id="chartFidelity"></svg></div>
+        <div class="legend" id="legendFidelity"></div>
+      </div>
+      <div class="card">
+        <h3>Label-quality flag</h3>
+        <div class="card-sub">share of each source's sampled rows, by dedup/normalize flag</div>
+        <div class="chart-scroll"><svg id="chartQuality"></svg></div>
+        <div class="legend" id="legendQuality"></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ SECTION 3: distributions ============ -->
+  <section id="sec-distributions">
+    <div class="sec-head">
+      <div class="kicker">Activity values</div>
+      <h2>MIC and HC50 value distributions (log₁₀ scale)</h2>
+      <p>Both endpoints span 3–4 orders of magnitude, so every panel below is binned in log₁₀ concentration (µM). Panels share an x-axis within each metric for shape comparison; y-axes are independent (source sample sizes differ by 20×).</p>
+    </div>
+    <div class="card" style="margin-bottom:18px;">
+      <h3>MIC (µM) — only DBAASP and QMAP carry MIC values in this sample</h3>
+      <div class="card-sub">839 labeled rows total</div>
+      <div class="chart-scroll" id="mic-hist-grid" style="display:flex; gap:8px;"></div>
+      <details class="tv"><summary>View bin counts as table</summary><div id="tv-mic"></div></details>
+    </div>
+    <div class="card">
+      <h3>HC50 (µM) — all four label-bearing sources contribute</h3>
+      <div class="card-sub">5,335 labeled rows total</div>
+      <div class="chart-scroll" id="hc50-hist-grid" style="display:flex; gap:8px;"></div>
+      <details class="tv"><summary>View bin counts as table</summary><div id="tv-hc50"></div></details>
+    </div>
+  </section>
+
+  <!-- ============ SECTION 4: species / target cell ============ -->
+  <section id="sec-targets">
+    <div class="sec-head">
+      <div class="kicker">Assay targets</div>
+      <h2>MIC target species vs. HC50 target-cell coverage</h2>
+      <p>MIC target organisms are richly annotated (205 distinct species in the sample); HC50 target-cell is almost entirely unpopulated outside DBAASP — a schema-population gap in three of five source modules, not evidence the underlying assays lack a target.</p>
+    </div>
+    <div class="grid2">
+      <div class="card">
+        <h3>Top 12 MIC target species</h3>
+        <div class="card-sub">of 205 distinct species recorded · classic ESKAPE-adjacent lab strains dominate</div>
+        <div class="chart-scroll"><svg id="chartSpecies"></svg></div>
+      </div>
+      <div class="card">
+        <h3>HC50 target-cell annotation</h3>
+        <div class="card-sub" id="hc50CellSub"></div>
+        <div id="hc50CellStat" style="margin:6px 0 14px;"></div>
+        <div class="chart-scroll"><svg id="chartHc50Cell"></svg></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ SECTION 5: overlap ============ -->
+  <section id="sec-overlap">
+    <div class="sec-head">
+      <div class="kicker">Cross-source identity</div>
+      <h2>How much do sources overlap on the same peptide?</h2>
+      <p>527 of 5,515 unique peptides in this sample (9.6%) appear under more than one source. QMAP — itself largely DBAASP-derived — overlaps with everything; the DBAASP↔QMAP link is comparatively small here because this pilot only pulled ~150 real DBAASP peptides (full-scale DBAASP will raise it).</p>
+    </div>
+    <div class="card">
+      <h3>Shared peptide_uid count between source pairs (this sample)</h3>
+      <div class="card-sub">diagonal = unique peptides contributed by that source; off-diagonal = peptides shared with the other source</div>
+      <div class="chart-scroll"><svg id="chartHeatmap"></svg></div>
+      <details class="tv"><summary>View as table</summary><div id="tv-heatmap"></div></details>
+    </div>
+  </section>
+
+  <!-- ============ FINDINGS ============ -->
+  <div class="findings">
+    <h2>Data quirks spotted while building these charts</h2>
+    <ol id="findingsList"></ol>
+  </div>
+
+  <footer>
+    Source: <code>MD_design_docs/phase1_pilot_dataset_sample.csv</code> (6,776 rows) · companion analysis: <code>MD_design_docs/phase1_pilot_data_report.md</code> · generated 2026-07-22.
+  </footer>
+</div>
+
+<div class="tooltip" id="tooltip" role="tooltip"></div>
+
+<script>
+/* ============================================================================
+   DATA
+   ============================================================================ */
+const DATA = {"source_counts":{"dbaasp":483,"dramp":200,"hemolytik2":673,"hemopi2":1926,"qmap":3494},"fidelity_tier":{"dbaasp":{"full":422,"partial":0,"failed":61},"dramp":{"full":102,"partial":88,"failed":10},"hemolytik2":{"full":283,"partial":319,"failed":71},"hemopi2":{"full":1926,"partial":0,"failed":0},"qmap":{"full":3397,"partial":7,"failed":90}},"quality_flag":{"dbaasp":{"none":83,"metadata_source_conflict":334,"high_replicate_dispersion":66},"dramp":{"none":173,"metadata_source_conflict":27,"high_replicate_dispersion":0},"hemolytik2":{"none":456,"metadata_source_conflict":153,"high_replicate_dispersion":64},"hemopi2":{"none":1415,"metadata_source_conflict":502,"high_replicate_dispersion":9},"qmap":{"none":2657,"metadata_source_conflict":768,"high_replicate_dispersion":69}},"peptide_label_coverage":{"dbaasp":{"n_peptides":132,"mic_only":73,"hc50_only":15,"both":39,"neither":5},"dramp":{"n_peptides":200,"mic_only":1,"hc50_only":1,"both":0,"neither":198},"hemolytik2":{"n_peptides":586,"mic_only":3,"hc50_only":407,"both":5,"neither":171},"hemopi2":{"n_peptides":1926,"mic_only":0,"hc50_only":1909,"both":17,"neither":0},"qmap":{"n_peptides":3249,"mic_only":393,"hc50_only":2539,"both":122,"neither":195}},"row_label_coverage":{"dbaasp":{"mic_only":341,"hc50_only":135,"both":0,"neither":7},"dramp":{"mic_only":0,"hc50_only":0,"both":0,"neither":200},"hemolytik2":{"mic_only":0,"hc50_only":478,"both":0,"neither":195},"hemopi2":{"mic_only":0,"hc50_only":1926,"both":0,"neither":0},"qmap":{"mic_only":498,"hc50_only":2796,"both":0,"neither":200}},"mic_hist":{"edges":[-1.3,-1.0444444444444445,-0.788888888888889,-0.5333333333333334,-0.2777777777777779,-0.022222222222222365,0.23333333333333317,0.4888888888888887,0.7444444444444442,0.9999999999999998,1.2555555555555553,1.5111111111111108,1.7666666666666664,2.022222222222222,2.2777777777777777,2.533333333333333,2.7888888888888888,3.0444444444444443,3.3],"series":{"dbaasp":{"counts":[0,0,2,8,13,39,36,46,51,38,46,19,22,10,7,2,1,1],"n":341},"qmap":{"counts":[1,4,2,9,17,29,43,52,53,49,55,68,53,39,14,7,2,1],"n":498}}},"hc50_hist":{"edges":[-1.4,-1.0899999999999999,-0.78,-0.4700000000000001,-0.16000000000000014,0.1499999999999999,0.45999999999999974,0.7699999999999996,1.0799999999999996,1.3899999999999997,1.6999999999999997,2.0099999999999993,2.3199999999999994,2.6299999999999994,2.939999999999999,3.2499999999999996,3.559999999999999,3.8699999999999988,4.18,4.489999999999998,4.8],"series":{"dbaasp":{"counts":[0,0,0,2,1,6,3,15,19,19,22,20,24,3,1,0,0,0,0,0],"n":135},"hemolytik2":{"counts":[1,0,0,7,12,15,26,30,41,61,84,115,50,35,1,0,0,0,0,0],"n":478},"hemopi2":{"counts":[0,0,3,14,17,22,61,108,133,251,368,459,246,189,55,0,0,0,0,0],"n":1926},"qmap":{"counts":[0,0,1,14,21,30,77,149,190,370,577,654,385,218,63,26,10,8,2,1],"n":2796}}},"top_species":[{"species":"Staphylococcus aureus","count":96},{"species":"Escherichia coli","count":91},{"species":"Pseudomonas aeruginosa","count":63},{"species":"Acinetobacter baumannii","count":26},{"species":"Bacillus subtilis","count":26},{"species":"Staphylococcus epidermidis","count":25},{"species":"Staphylococcus aureus ATCC 25923","count":18},{"species":"Klebsiella pneumoniae","count":16},{"species":"Salmonella enterica","count":15},{"species":"Enterococcus faecalis","count":15},{"species":"Pseudomonas aeruginosa ATCC 27853","count":12},{"species":"Escherichia coli ATCC 25922","count":12}],"n_distinct_species":205,"hc50_target_cell":{"n_hc50_labeled":5335,"n_with_cell":135,"pct_with_cell":2.530459231490159,"breakdown":[{"cell":"Human erythrocytes","count":93},{"cell":"CEM-SS cells","count":21},{"cell":"Sheep erythrocytes","count":6},{"cell":"Mouse erythrocytes","count":5},{"cell":"Human umbilical vein endothelial cells HUVEC","count":2},{"cell":"Mouse fibroblasts NIH 3T3","count":2},{"cell":"Vero cells","count":1},{"cell":"Madin-Darby canine kidney cells","count":1},{"cell":"Human microglial cells HMC3","count":1},{"cell":"Human corneal epithelial cells HCE-2","count":1},{"cell":"Human PBMC","count":1},{"cell":"Human gastric epithelial cells GES-1","count":1},{"cell":"Horse erythrocytes","count":1},{"cell":"Human keratinocytes HaCat","count":1},{"cell":"Mouse osteoblastic cells MC3T3-E1","count":1}],"source_of_cell_annotations":{"dbaasp":138}},"source_overlap_pairs":{"dbaasp|dramp":0,"dbaasp|hemolytik2":4,"dbaasp|hemopi2":8,"dbaasp|qmap":37,"dramp|hemolytik2":0,"dramp|hemopi2":1,"dramp|qmap":4,"hemolytik2|hemopi2":104,"hemolytik2|qmap":49,"hemopi2|qmap":425},"unique_peptide_uids":5515,"n_multisource_peptides":527,"seqlen_stats":{"overall":{"min":1,"p50":17.0,"max":190},"by_source":{"dbaasp":{"min":3,"p50":18.0,"max":45},"dramp":{"min":2,"p50":20.0,"max":97},"hemolytik2":{"min":2,"p50":19.0,"max":190},"hemopi2":{"min":6,"p50":17.0,"max":39},"qmap":{"min":1,"p50":17.0,"max":190}}},"kpi":{"total_rows":6776,"unique_peptides":5515,"n_sources":5,"pct_multisource":9.55575702629193,"pct_row_mic":12.381936245572609,"pct_row_hc50":78.73376623376623,"pct_failed_tier":3.4238488783943333,"pct_any_quality_flag":29.39787485242031,"smiles_null_pct":1.5938606847697756},"smiles_null_by_source":{"false":{"dbaasp":474,"dramp":191,"hemolytik2":613,"hemopi2":1926,"qmap":3464},"true":{"dbaasp":9,"dramp":9,"hemolytik2":60,"hemopi2":0,"qmap":30}},"source_labels":{"dbaasp":"DBAASP","dramp":"DRAMP","hemolytik2":"Hemolytik2","hemopi2":"HemoPI2","qmap":"QMAP"},"sources_order":["dbaasp","dramp","hemolytik2","hemopi2","qmap"]};
+
+const SOURCES = DATA.sources_order;
+const SLABEL = DATA.source_labels;
+
+/* ============================================================================
+   THEME
+   ============================================================================ */
+const root = document.documentElement;
+const toggleBtn = document.getElementById('themeToggle');
+const toggleLabel = document.getElementById('themeToggleLabel');
+let themeState = 'auto';
+function applyTheme(){
+  if(themeState === 'auto'){ root.removeAttribute('data-theme'); toggleLabel.textContent = 'Auto theme'; }
+  else { root.setAttribute('data-theme', themeState); toggleLabel.textContent = themeState === 'dark' ? 'Dark theme' : 'Light theme'; }
+}
+toggleBtn.addEventListener('click', () => {
+  themeState = themeState === 'auto' ? 'light' : (themeState === 'light' ? 'dark' : 'auto');
+  applyTheme();
+  requestAnimationFrame(renderAll); // recolor charts that read CSS vars at draw time
+});
+applyTheme();
+
+function cssVar(name){ return getComputedStyle(document.body).getPropertyValue(name).trim(); }
+
+/* ============================================================================
+   SMALL HELPERS
+   ============================================================================ */
+const SVGNS = "http://www.w3.org/2000/svg";
+function el(tag, attrs={}, children=[]){
+  const e = document.createElementNS(SVGNS, tag);
+  for(const k in attrs) e.setAttribute(k, attrs[k]);
+  for(const c of children) e.appendChild(c);
+  return e;
+}
+function fmtInt(n){ return n.toLocaleString('en-US'); }
+function fmtPct(n, d=1){ return n.toFixed(d) + '%'; }
+function truncateLabel(str, maxChars){
+  if(str.length <= maxChars) return str;
+  return str.slice(0, Math.max(1,maxChars-1)).trimEnd() + '…';
+}
+// Heckbert-style "nice number" rounding for axis ticks
+function niceNum(range, round){
+  const exp = Math.floor(Math.log10(range || 1));
+  const f = (range || 1) / Math.pow(10, exp);
+  let nf;
+  if(round){ nf = f<1.5?1:(f<3?2:(f<7?5:10)); }
+  else { nf = f<=1?1:(f<=2?2:(f<=5?5:10)); }
+  return nf * Math.pow(10, exp);
+}
+function niceMax(maxValue, ticks=4){
+  if(maxValue<=0) return {max:1, step:1};
+  const step = niceNum(maxValue/ticks, true);
+  const max = Math.ceil(maxValue/step)*step;
+  return {max, step};
+}
+function fmtConc(v){ // v is actual concentration (uM), not log
+  if(v >= 1000) return (v/1000).toFixed(v>=10000?0:1).replace(/\.0$/,'') + 'k';
+  if(v >= 1) return v >= 100 ? Math.round(v).toString() : (v>=10? v.toFixed(1).replace(/\.0$/,''): v.toFixed(1));
+  return v.toFixed(v < 0.1 ? 2 : 1);
+}
+
+const tooltip = document.getElementById('tooltip');
+function showTooltip(x, y, html){
+  tooltip.innerHTML = html;
+  tooltip.style.left = x + 'px';
+  tooltip.style.top = y + 'px';
+  tooltip.classList.add('show');
+}
+function hideTooltip(){ tooltip.classList.remove('show'); }
+
+function seriesColorVar(src){ return `var(--s-${src})`; }
+
+const STATUS = {
+  full:     {color:'var(--st-good)',     icon:'✓', label:'full'},
+  partial:  {color:'var(--st-warning)',  icon:'!', label:'partial'},
+  failed:   {color:'var(--st-critical)', icon:'✕', label:'failed'},
+  none:                    {color:'var(--st-good)',    icon:'✓', label:'no flag'},
+  metadata_source_conflict:{color:'var(--st-warning)', icon:'!', label:'metadata source conflict'},
+  high_replicate_dispersion:{color:'var(--st-serious)',icon:'▲', label:'high replicate dispersion'},
+};
+
+const COVERAGE_COLORS = {
+  mic_only:  'var(--s-dbaasp)',
+  hc50_only: 'var(--s-qmap)',
+  both:      'var(--s-hemolytik2)',
+  neither:   'var(--text-muted)',
+};
+const COVERAGE_LABELS = {mic_only:'MIC only', hc50_only:'HC50 only', both:'both MIC + HC50', neither:'neither'};
+
+/* ============================================================================
+   GENERIC: horizontal bar chart (single value per category, one hue or per-item colors)
+   ============================================================================ */
+function renderHBar(svgEl, items, opts={}){
+  svgEl.innerHTML = '';
+  const W = opts.width || 520, labelW = opts.labelW || 150, rightPad = opts.rightPad || 56;
+  const barH = opts.barH || 20, gap = opts.gap || 12, topPad = 8, botPad = 26;
+  const plotW = W - labelW - rightPad;
+  const n = items.length;
+  const H = topPad + n*(barH+gap) - gap + botPad;
+  svgEl.setAttribute('viewBox', `0 0 ${W} ${H}`);
+  svgEl.setAttribute('width', '100%');
+  svgEl.setAttribute('height', H);
+  svgEl.setAttribute('preserveAspectRatio', 'xMinYMin meet');
+  svgEl.style.minWidth = opts.minWidth || '420px';
+
+  const rawMax = opts.maxValue || Math.max(...items.map(d=>d.value)) * 1.08;
+  const {max:maxV, step} = opts.niceTicks===false ? {max:rawMax, step:rawMax/(opts.ticks||4)} : niceMax(rawMax, opts.ticks||4);
+  const x0 = labelW;
+  // gridlines at nice steps
+  for(let v=0; v<=maxV+1e-9; v+=step){
+    const x = x0 + (v/maxV)*plotW;
+    svgEl.appendChild(el('line', {x1:x,y1:topPad-2,x2:x,y2:H-botPad+2,class:'gridline'}));
+    const t = el('text', {x:x, y:H-botPad+16, class:'axis-label', 'text-anchor': v===0?'start':'middle'});
+    t.textContent = opts.valueFmt ? opts.valueFmt(v) : fmtInt(Math.round(v));
+    svgEl.appendChild(t);
+  }
+  svgEl.appendChild(el('line', {x1:x0,y1:topPad-2,x2:x0,y2:H-botPad+2,class:'baseline'}));
+
+  const maxChars = Math.max(6, Math.floor((labelW-14)/6.4));
+  items.forEach((d, i) => {
+    const y = topPad + i*(barH+gap);
+    const w = Math.max(2, (d.value/maxV)*plotW);
+    const label = el('text', {x:x0-10, y:y+barH*0.68, class:'cat-label', 'text-anchor':'end'});
+    const truncated = truncateLabel(d.label, maxChars);
+    label.textContent = truncated;
+    if(truncated !== d.label){
+      const titleEl = document.createElementNS(SVGNS,'title');
+      titleEl.textContent = d.label;
+      label.appendChild(titleEl);
+    }
+    svgEl.appendChild(label);
+
+    const rect = el('rect', {x:x0, y, width:w, height:barH, rx:4, ry:4, fill:d.color || 'var(--seq-450)', class:'hit', tabindex:'0'});
+    svgEl.appendChild(rect);
+    // square baseline edge: overlay a small rect to square the left corners
+    svgEl.appendChild(el('rect', {x:x0, y, width:Math.min(6,w), height:barH, fill:d.color || 'var(--seq-450)'}));
+
+    const vlabel = el('text', {x:x0+w+8, y:y+barH*0.68, class:'val-label'});
+    vlabel.textContent = d.valueLabel || fmtInt(d.value);
+    svgEl.appendChild(vlabel);
+
+    const showTT = (evt) => {
+      const pt = evt.touches ? evt.touches[0] : evt;
+      showTooltip(pt.clientX, pt.clientY, `<div class="tt-title">${d.label}</div><div class="tt-row"><span>value</span><span class="v">${d.valueLabel || fmtInt(d.value)}</span></div>${d.ttExtra||''}`);
+      rect.setAttribute('opacity','0.82');
+    };
+    const hideTT = () => { hideTooltip(); rect.setAttribute('opacity','1'); };
+    rect.addEventListener('pointermove', showTT);
+    rect.addEventListener('pointerenter', showTT);
+    rect.addEventListener('pointerleave', hideTT);
+    rect.addEventListener('focus', () => showTT({clientX: x0+w, clientY: y}));
+    rect.addEventListener('blur', hideTT);
+  });
+  return H;
+}
+
+/* ============================================================================
+   GENERIC: stacked horizontal bar (100% or absolute), one row per category
+   ============================================================================ */
+function renderStackedHBar(svgEl, categories, seriesKeys, dataMap, colorMap, opts={}){
+  svgEl.innerHTML = '';
+  const W = opts.width || 520, labelW = opts.labelW || 96, rightPad = opts.rightPad || 46;
+  const barH = opts.barH || 22, gap = opts.gap || 14, topPad = 10, botPad = 26;
+  const plotW = W - labelW - rightPad;
+  const n = categories.length;
+  const H = topPad + n*(barH+gap) - gap + botPad;
+  svgEl.setAttribute('viewBox', `0 0 ${W} ${H}`);
+  svgEl.setAttribute('width','100%');
+  svgEl.setAttribute('height', H);
+  svgEl.setAttribute('preserveAspectRatio','xMinYMin meet');
+  svgEl.style.minWidth = opts.minWidth || '420px';
+
+  const percent = !!opts.percent;
+  const x0 = labelW;
+
+  if(percent){
+    [0,25,50,75,100].forEach(p=>{
+      const x = x0 + (p/100)*plotW;
+      svgEl.appendChild(el('line',{x1:x,y1:topPad-2,x2:x,y2:H-botPad+2,class:'gridline'}));
+      const t = el('text',{x, y:H-botPad+16, class:'axis-label', 'text-anchor': p===0?'start':(p===100?'end':'middle')});
+      t.textContent = p+'%';
+      svgEl.appendChild(t);
+    });
+  }
+  svgEl.appendChild(el('line',{x1:x0,y1:topPad-2,x2:x0,y2:H-botPad+2,class:'baseline'}));
+
+  categories.forEach((cat, i) => {
+    const y = topPad + i*(barH+gap);
+    const row = dataMap[cat];
+    const total = seriesKeys.reduce((s,k)=> s + (row[k]||0), 0);
+    const label = el('text',{x:x0-10, y:y+barH*0.68, class:'cat-label', 'text-anchor':'end'});
+    label.textContent = SLABEL[cat] || cat;
+    svgEl.appendChild(label);
+
+    const scale = percent ? (total>0 ? plotW/total : 0) : (opts.maxTotal ? plotW/opts.maxTotal : plotW/total);
+    let cx = x0;
+    seriesKeys.forEach((k, si) => {
+      const v = row[k] || 0;
+      if(v<=0) return;
+      let w = v*scale;
+      const isFirst = si===0 || seriesKeys.slice(0,si).every(kk=>!row[kk]);
+      const isLast = seriesKeys.slice(si+1).every(kk=>!row[kk]);
+      let rx = cx, rw = w;
+      if(!isFirst){ rx += 1; rw -= 1; }
+      if(!isLast){ rw -= 1; }
+      rw = Math.max(0, rw);
+      const rect = el('rect',{x:rx, y, width:rw, height:barH, fill: colorMap[k], class:'hit', tabindex:'0'});
+      if(isFirst) rect.setAttribute('rx','4'), rect.setAttribute('ry','4');
+      svgEl.appendChild(rect);
+      // re-square the non-rounded sides by overlay
+      if(isFirst && !isLast){ svgEl.appendChild(el('rect',{x:rx+rw-6,y,width:6,height:barH,fill:colorMap[k]})); }
+      if(isLast && !isFirst){ svgEl.appendChild(el('rect',{x:rx,y,width:6,height:barH,fill:colorMap[k]})); }
+
+      const pct = total>0 ? (v/total*100) : 0;
+      if(rw > 30){
+        const inLabel = el('text',{x:rx+rw/2, y:y+barH*0.68, 'text-anchor':'middle', style:`fill:${luminanceInk(colorMap[k])}; font-size:11px; font-weight:600;`});
+        inLabel.textContent = percent ? Math.round(pct)+'%' : fmtInt(v);
+        svgEl.appendChild(inLabel);
+      }
+      const stName = STATUS[k] ? STATUS[k].label : (COVERAGE_LABELS[k]||k);
+      const showTT = (evt) => {
+        const pt = evt.touches?evt.touches[0]:evt;
+        showTooltip(pt.clientX, pt.clientY, `<div class="tt-title">${SLABEL[cat]||cat} — ${stName}</div><div class="tt-row"><span>rows</span><span class="v">${fmtInt(v)}</span></div><div class="tt-row"><span>share of source</span><span class="v">${fmtPct(pct)}</span></div>`);
+        rect.setAttribute('opacity','0.82');
+      };
+      const hideTT = ()=>{hideTooltip(); rect.setAttribute('opacity','1');};
+      rect.addEventListener('pointermove', showTT);
+      rect.addEventListener('pointerenter', showTT);
+      rect.addEventListener('pointerleave', hideTT);
+      rect.addEventListener('focus', ()=>showTT({clientX:rx+rw/2, clientY:y}));
+      rect.addEventListener('blur', hideTT);
+      cx += w;
+    });
+  });
+  return H;
+}
+function luminanceInk(cssColorVarExpr){
+  // crude: text-muted color always used as identity-neutral fallback; for our fills, pick white on strong hues, dark ink on light ones
+  const v = cssColorVarExpr.match(/--([\w-]+)/);
+  const light = ['--st-warning'];
+  if(v && light.includes('--'+v[1])) return 'var(--text-primary)';
+  return '#ffffff';
+}
+
+/* ============================================================================
+   HISTOGRAM small-multiple panel
+   ============================================================================ */
+function renderHistPanel(container, edges, counts, n, color, label, opts={}){
+  const svg = document.createElementNS(SVGNS,'svg');
+  container.appendChild(svg);
+  const W = opts.width || 210, H = opts.height || 150;
+  const padL = 30, padR = 6, padT = 8, padB = 26;
+  const plotW = W-padL-padR, plotH = H-padT-padB;
+  svg.setAttribute('viewBox',`0 0 ${W} ${H}`);
+  svg.setAttribute('width', W);
+  svg.setAttribute('height', H);
+  svg.style.flex = 'none';
+
+  const rawMaxC = Math.max(1, ...counts);
+  const {max:maxC} = niceMax(rawMaxC, 2);
+  const nb = counts.length;
+  const bw = plotW/nb;
+
+  // y gridlines (nice numbers: 0, half, full)
+  [0,0.5,1].forEach(f=>{
+    const y = padT + plotH*(1-f);
+    svg.appendChild(el('line',{x1:padL,y1:y,x2:W-padR,y2:y,class:'gridline'}));
+    if(f>0){
+      const t = el('text',{x:padL-6,y:y+3,class:'axis-label','text-anchor':'end'});
+      t.textContent = fmtInt(Math.round(maxC*f));
+      svg.appendChild(t);
+    }
+  });
+  svg.appendChild(el('line',{x1:padL,y1:padT+plotH,x2:W-padR,y2:padT+plotH,class:'baseline'}));
+
+  counts.forEach((c,i)=>{
+    if(c<=0) return;
+    const h = (c/maxC)*plotH;
+    const x = padL + i*bw + 0.6;
+    const w = Math.max(1, bw-1.2);
+    const rect = el('rect',{x, y:padT+plotH-h, width:w, height:h, fill:color, rx:1.5, ry:1.5, class:'hit', tabindex:'0'});
+    svg.appendChild(rect);
+    const lo = Math.pow(10, edges[i]), hi = Math.pow(10, edges[i+1]);
+    const showTT = (evt)=>{
+      const pt = evt.touches?evt.touches[0]:evt;
+      showTooltip(pt.clientX, pt.clientY, `<div class="tt-title">${label}</div><div class="tt-row"><span>${fmtConc(lo)}–${fmtConc(hi)} µM</span><span class="v">${c} rows</span></div>`);
+      rect.setAttribute('opacity','0.8');
+    };
+    const hideTT = ()=>{hideTooltip(); rect.setAttribute('opacity','1');};
+    rect.addEventListener('pointermove',showTT);
+    rect.addEventListener('pointerenter',showTT);
+    rect.addEventListener('pointerleave',hideTT);
+    rect.addEventListener('focus',()=>showTT({clientX:x,clientY:padT}));
+    rect.addEventListener('blur',hideTT);
+  });
+
+  // x ticks at decade marks (powers of 10)
+  const loEdge = edges[0], hiEdge = edges[edges.length-1];
+  for(let p = Math.ceil(loEdge); p <= Math.floor(hiEdge); p++){
+    const frac = (p-loEdge)/(hiEdge-loEdge);
+    const x = padL + frac*plotW;
+    svg.appendChild(el('line',{x1:x,y1:padT+plotH,x2:x,y2:padT+plotH+3,class:'baseline'}));
+    const t = el('text',{x, y:padT+plotH+15, class:'axis-label','text-anchor':'middle'});
+    t.textContent = fmtConc(Math.pow(10,p));
+    svg.appendChild(t);
+  }
+
+  const cap = document.createElement('div');
+  cap.style.textAlign = 'center';
+  cap.style.fontSize = '11.5px';
+  cap.style.marginTop = '2px';
+  cap.style.color = 'var(--text-secondary)';
+  cap.innerHTML = `<span style="display:inline-block;width:8px;height:8px;border-radius:2px;background:${color};margin-right:5px;vertical-align:-1px;"></span>${label} <span style="color:var(--text-muted)">(n=${n})</span>`;
+  const wrapDiv = document.createElement('div');
+  wrapDiv.appendChild(cap);
+  container.appendChild(wrapDiv);
+}
+
+function renderHistGrid(containerId, histData, sourceList){
+  const container = document.getElementById(containerId);
+  container.innerHTML = '';
+  const edges = histData.edges;
+  sourceList.forEach(src=>{
+    const s = histData.series[src];
+    if(!s) return;
+    const panelWrap = document.createElement('div');
+    panelWrap.style.display='flex'; panelWrap.style.flexDirection='column'; panelWrap.style.alignItems='center';
+    container.appendChild(panelWrap);
+    renderHistPanel(panelWrap, edges, s.counts, s.n, `var(--s-${src})`, SLABEL[src]);
+  });
+}
+
+/* ============================================================================
+   HEATMAP
+   ============================================================================ */
+function seqColor(t){ // t in [0,1] -> CSS var interpolation via discrete steps
+  const steps = ['--seq-100','--seq-200','--seq-300','--seq-400','--seq-500','--seq-600','--seq-700'];
+  const idx = Math.min(steps.length-1, Math.round(t*(steps.length-1)));
+  return `var(${steps[idx]})`;
+}
+
+function renderHeatmap(svgEl, sources, pairCounts, diagCounts){
+  svgEl.innerHTML = '';
+  const n = sources.length;
+  const cell = 70, labelW = 108, topLabelH = 90, pad = 10;
+  const W = labelW + n*cell + pad, H = topLabelH + n*cell + pad;
+  svgEl.setAttribute('viewBox',`0 0 ${W} ${H}`);
+  svgEl.setAttribute('width','100%');
+  svgEl.setAttribute('height', H);
+  svgEl.style.minWidth = '520px';
+
+  const maxOff = Math.max(...Object.values(pairCounts));
+
+  function pairKey(a,b){
+    const order = SOURCES;
+    return order.indexOf(a) < order.indexOf(b) ? `${a}|${b}` : `${b}|${a}`;
+  }
+
+  sources.forEach((rs, ri)=>{
+    // row label
+    const rl = el('text',{x:labelW-10, y: topLabelH + ri*cell + cell/2 + 4, class:'cat-label','text-anchor':'end'});
+    rl.textContent = SLABEL[rs];
+    svgEl.appendChild(rl);
+  });
+  sources.forEach((cs, ci)=>{
+    // column label, rotated
+    const x = labelW + ci*cell + cell/2;
+    const t = el('text',{x, y: topLabelH-10, class:'cat-label','text-anchor':'start', transform:`rotate(-40 ${x} ${topLabelH-10})`});
+    t.textContent = SLABEL[cs];
+    svgEl.appendChild(t);
+  });
+
+  sources.forEach((rs, ri)=>{
+    sources.forEach((cs, ci)=>{
+      const x = labelW + ci*cell, y = topLabelH + ri*cell;
+      const isDiag = rs===cs;
+      let v, fill, textFill;
+      if(isDiag){
+        v = diagCounts[rs];
+        fill = 'var(--surface-2)';
+        textFill = 'var(--text-secondary)';
+      } else {
+        v = pairCounts[pairKey(rs,cs)] || 0;
+        const t = maxOff>0 ? v/maxOff : 0;
+        fill = v===0 ? 'var(--surface-2)' : seqColor(t);
+        textFill = t>0.55 ? '#ffffff' : 'var(--text-primary)';
+      }
+      const rect = el('rect',{x:x+1,y:y+1,width:cell-2,height:cell-2,rx:6,ry:6,fill, stroke: isDiag?'var(--border-strong)':'none', 'stroke-dasharray': isDiag?'3,3':'none', class:'hit', tabindex:'0'});
+      svgEl.appendChild(rect);
+      const label = el('text',{x:x+cell/2, y:y+cell/2+4, 'text-anchor':'middle', style:`fill:${textFill}; font-size:13px; font-weight:${isDiag?600:600};`});
+      label.textContent = fmtInt(v);
+      svgEl.appendChild(label);
+
+      const showTT = (evt)=>{
+        const pt = evt.touches?evt.touches[0]:evt;
+        const html = isDiag
+          ? `<div class="tt-title">${SLABEL[rs]}</div><div class="tt-row"><span>unique peptides</span><span class="v">${fmtInt(v)}</span></div>`
+          : `<div class="tt-title">${SLABEL[rs]} ∩ ${SLABEL[cs]}</div><div class="tt-row"><span>shared peptide_uid</span><span class="v">${fmtInt(v)}</span></div>`;
+        showTooltip(pt.clientX, pt.clientY, html);
+        rect.setAttribute('opacity','0.85');
+      };
+      const hideTT = ()=>{hideTooltip(); rect.setAttribute('opacity','1');};
+      rect.addEventListener('pointermove',showTT);
+      rect.addEventListener('pointerenter',showTT);
+      rect.addEventListener('pointerleave',hideTT);
+      rect.addEventListener('focus',()=>showTT({clientX:x+cell/2,clientY:y}));
+      rect.addEventListener('blur',hideTT);
+    });
+  });
+}
+
+/* ============================================================================
+   LEGEND helper
+   ============================================================================ */
+function renderLegend(container, items){
+  container.innerHTML = '';
+  items.forEach(it=>{
+    const div = document.createElement('div');
+    div.className = 'item';
+    div.innerHTML = `<span class="swatch" style="background:${it.color}"></span><span>${it.icon?it.icon+' ':''}${it.label}</span>`;
+    container.appendChild(div);
+  });
+}
+
+/* ============================================================================
+   TABLE VIEW helper
+   ============================================================================ */
+function renderTableView(container, columns, rows){
+  container.innerHTML = '';
+  const wrap = document.createElement('div');
+  wrap.className = 'tv-table-wrap';
+  const table = document.createElement('table');
+  table.className = 'tv-table';
+  const thead = document.createElement('thead');
+  const htr = document.createElement('tr');
+  columns.forEach(c=>{ const th=document.createElement('th'); th.textContent=c; htr.appendChild(th); });
+  thead.appendChild(htr); table.appendChild(thead);
+  const tbody = document.createElement('tbody');
+  rows.forEach(r=>{
+    const tr = document.createElement('tr');
+    r.forEach(v=>{ const td=document.createElement('td'); td.textContent=v; tr.appendChild(td); });
+    tbody.appendChild(tr);
+  });
+  table.appendChild(tbody);
+  wrap.appendChild(table);
+  container.appendChild(wrap);
+}
+
+/* ============================================================================
+   KPI ROW
+   ============================================================================ */
+function renderKPIs(){
+  const k = DATA.kpi;
+  const items = [
+    {label:'Total rows (sample)', value: fmtInt(k.total_rows), sub:`across ${k.n_sources} sources`},
+    {label:'Unique peptides', value: fmtInt(k.unique_peptides), sub:`${fmtPct(k.pct_multisource)} span >1 source`},
+    {label:'Rows with MIC', value: fmtPct(k.pct_row_mic), sub:'DBAASP + QMAP only'},
+    {label:'Rows with HC50', value: fmtPct(k.pct_row_hc50), sub:'oversampled by design'},
+    {label:'Any quality flag', value: fmtPct(k.pct_any_quality_flag), sub:`${fmtPct(k.pct_failed_tier)} failed fidelity`},
+  ];
+  const row = document.getElementById('kpiRow');
+  row.innerHTML = '';
+  items.forEach(it=>{
+    const d = document.createElement('div');
+    d.className = 'kpi';
+    d.innerHTML = `<div class="label">${it.label}</div><div class="value">${it.value}</div><div class="sub">${it.sub}</div>`;
+    row.appendChild(d);
+  });
+}
+
+/* ============================================================================
+   RENDER: section 1
+   ============================================================================ */
+function renderComposition(){
+  // source counts
+  const items = SOURCES.map(s=>({label:SLABEL[s], value:DATA.source_counts[s], color:seriesColorVar(s), valueLabel:fmtInt(DATA.source_counts[s])}))
+    .sort((a,b)=>b.value-a.value);
+  const H = renderHBar(document.getElementById('chartSourceCounts'), items, {width:520, barH:22, gap:13, labelW:96});
+
+  // peptide-level label coverage (100% stacked)
+  const covKeys = ['mic_only','both','hc50_only','neither'];
+  const dataMap = {};
+  SOURCES.forEach(s=>{ dataMap[s] = DATA.peptide_label_coverage[s]; });
+  renderStackedHBar(document.getElementById('chartLabelCoverage'), SOURCES, covKeys, dataMap, COVERAGE_COLORS, {width:520, percent:true, barH:22, gap:13, labelW:96});
+  renderLegend(document.getElementById('legendLabelCoverage'), covKeys.map(k=>({color:COVERAGE_COLORS[k], label:COVERAGE_LABELS[k]})));
+}
+
+/* ============================================================================
+   RENDER: section 2
+   ============================================================================ */
+function renderQuality(){
+  const tierKeys = ['full','partial','failed'];
+  const tierMap = {}; SOURCES.forEach(s=>tierMap[s]=DATA.fidelity_tier[s]);
+  const tierColors = {}; tierKeys.forEach(k=>tierColors[k]=STATUS[k].color);
+  renderStackedHBar(document.getElementById('chartFidelity'), SOURCES, tierKeys, tierMap, tierColors, {width:520, percent:true, barH:22, gap:13, labelW:96});
+  renderLegend(document.getElementById('legendFidelity'), tierKeys.map(k=>({color:STATUS[k].color, label:`${STATUS[k].icon} ${STATUS[k].label}`})));
+
+  const qKeys = ['none','metadata_source_conflict','high_replicate_dispersion'];
+  const qMap = {}; SOURCES.forEach(s=>qMap[s]=DATA.quality_flag[s]);
+  const qColors = {}; qKeys.forEach(k=>qColors[k]=STATUS[k].color);
+  renderStackedHBar(document.getElementById('chartQuality'), SOURCES, qKeys, qMap, qColors, {width:520, percent:true, barH:22, gap:13, labelW:96});
+  renderLegend(document.getElementById('legendQuality'), qKeys.map(k=>({color:STATUS[k].color, label:`${STATUS[k].icon} ${STATUS[k].label}`})));
+}
+
+/* ============================================================================
+   RENDER: section 3
+   ============================================================================ */
+function renderDistributions(){
+  renderHistGrid('mic-hist-grid', DATA.mic_hist, ['dbaasp','qmap']);
+  renderHistGrid('hc50-hist-grid', DATA.hc50_hist, ['dbaasp','hemolytik2','hemopi2','qmap']);
+
+  // table views
+  const micEdges = DATA.mic_hist.edges;
+  const micRows = [];
+  for(let i=0;i<micEdges.length-1;i++){
+    const lo = Math.pow(10,micEdges[i]).toFixed(2), hi = Math.pow(10,micEdges[i+1]).toFixed(2);
+    micRows.push([`${lo}–${hi} µM`, DATA.mic_hist.series.dbaasp.counts[i], DATA.mic_hist.series.qmap.counts[i]]);
+  }
+  renderTableView(document.getElementById('tv-mic'), ['Bin (µM)','DBAASP','QMAP'], micRows);
+
+  const hcEdges = DATA.hc50_hist.edges;
+  const hcRows = [];
+  for(let i=0;i<hcEdges.length-1;i++){
+    const lo = Math.pow(10,hcEdges[i]).toFixed(2), hi = Math.pow(10,hcEdges[i+1]).toFixed(2);
+    hcRows.push([`${lo}–${hi} µM`,
+      DATA.hc50_hist.series.dbaasp.counts[i], DATA.hc50_hist.series.hemolytik2.counts[i],
+      DATA.hc50_hist.series.hemopi2.counts[i], DATA.hc50_hist.series.qmap.counts[i]]);
+  }
+  renderTableView(document.getElementById('tv-hc50'), ['Bin (µM)','DBAASP','Hemolytik2','HemoPI2','QMAP'], hcRows);
+}
+
+/* ============================================================================
+   RENDER: section 4
+   ============================================================================ */
+function renderTargets(){
+  const items = DATA.top_species.map(d=>({label:d.species, value:d.count, color:'var(--seq-450)'}));
+  renderHBar(document.getElementById('chartSpecies'), items, {width:520, labelW:210, barH:17, gap:9, minWidth:'460px'});
+
+  const hc = DATA.hc50_target_cell;
+  document.getElementById('hc50CellSub').textContent = `of ${fmtInt(hc.n_hc50_labeled)} HC50-labeled rows in the sample`;
+  const statDiv = document.getElementById('hc50CellStat');
+  statDiv.innerHTML = `<div style="font-size:30px;font-weight:600;letter-spacing:-0.01em;">${fmtPct(hc.pct_with_cell)}</div><div style="font-size:12.5px;color:var(--text-secondary);">carry a target-cell annotation — all ${fmtInt(hc.n_with_cell)} from <b style="color:var(--text-primary)">DBAASP</b> alone. The other ${fmtInt(hc.n_hc50_labeled-hc.n_with_cell)} rows (incl. all of HemoPI2 and QMAP) have an HC50 value but no recorded target cell.</div>`;
+
+  const cellItems = hc.breakdown.slice(0,8).map(d=>({label:d.cell, value:d.count, color:'var(--seq-450)'}));
+  renderHBar(document.getElementById('chartHc50Cell'), cellItems, {width:520, labelW:210, barH:17, gap:9, minWidth:'460px'});
+}
+
+/* ============================================================================
+   RENDER: section 5
+   ============================================================================ */
+function renderOverlap(){
+  const diag = {}; SOURCES.forEach(s=>{
+    // unique peptides per source = peptide_label_coverage n_peptides
+    diag[s] = DATA.peptide_label_coverage[s].n_peptides;
+  });
+  renderHeatmap(document.getElementById('chartHeatmap'), SOURCES, DATA.source_overlap_pairs, diag);
+
+  const cols = ['', ...SOURCES.map(s=>SLABEL[s])];
+  const rows = SOURCES.map(rs=>{
+    const row = [SLABEL[rs]];
+    SOURCES.forEach(cs=>{
+      if(rs===cs) row.push(diag[rs]);
+      else {
+        const key = SOURCES.indexOf(rs)<SOURCES.indexOf(cs) ? `${rs}|${cs}` : `${cs}|${rs}`;
+        row.push(DATA.source_overlap_pairs[key]||0);
+      }
+    });
+    return row;
+  });
+  renderTableView(document.getElementById('tv-heatmap'), cols, rows);
+}
+
+/* ============================================================================
+   FINDINGS
+   ============================================================================ */
+function renderFindings(){
+  const findings = [
+    `<b>A one-residue "peptide" slipped through QMAP:</b> a single row has <code>sequence_raw = "K"</code> (bare lysine) with no MIC/HC50 value and a valid amino-acid SMILES — RDKit happily converts a single residue, so nothing in the fidelity-tier check catches a peptide too short to be biologically meaningful. Worth a minimum-length filter upstream of any model split.`,
+    `<b>A 190-residue "peptide" is actually a full protein, cross-source-linked correctly:</b> the longest sequence in the sample (190 aa, <code>MTESLVLSPAPAKPKRVKASRRSASHPTYSEMIAAAIRAEKSRGGS…</code>) appears in both Hemolytik2 and QMAP under the <em>same</em> <code>peptide_uid</code> — dedup identity-matched it correctly, but at 190 residues it's roughly 10× a typical AMP and only the QMAP copy carries a (very potent, 0.14 µM) MIC value. A handful of these full-length outliers sit in a sequence-length tail that a length-based split or truncation policy needs to address explicitly.`,
+    `<b><code>metadata_source_conflict</code> and <code>partial</code> fidelity never co-occur, and that's structural, not coincidental:</b> in this sample every one of the 1,784 conflict-flagged rows has fidelity tier <code>full</code> or <code>failed</code>, never <code>partial</code> — because the flag only fires when a <em>richer</em> same-peptide record overwrote this row's chemistry, and "richer" in this pipeline means the incoming tier is already <code>full</code>. It's a useful tell for auditing the flag logic, but also means "partial" rows are exactly the ones dedup hasn't yet found a better version of.`,
+    `<b>The sample's quality-flag rates are roughly 1.5× the full pull's, purely from the sampling strategy:</b> 29.4% of sample rows carry a flag vs. 19.1% in the full 90,697-row pull (§4 of the report) — expected, since the sample kept 100% of HC50 rows, and HC50-bearing sources (QMAP, HemoPI2) also happen to carry more of the overlap-driven <code>metadata_source_conflict</code> flags. A reader who only sees this page should not conclude the full pipeline is flagging 3 in 10 rows.`,
+    `<b>SMILES is missing on 108 rows (1.6%) despite a non-null sequence</b>, concentrated in Hemolytik2 (60 of 673, 8.9%) — consistent with the report's note (§2, §6) that Hemolytik2's raw sequences embed non-residue characters (Δ, *) that choke both conversion paths; DBAASP and QMAP sit under 1% each.`,
+    `<b>HC50 target-cell coverage in the sample (2.53%) lines up almost exactly with the full pull's 2.6%</b> — one of the only metrics where the stratified sample (despite massively oversampling HC50 rows generally) preserved the underlying rate, because the gap is a source-module population issue (§5, §6) that no amount of resampling HC50 rows fixes.`,
+  ];
+  const list = document.getElementById('findingsList');
+  list.innerHTML = '';
+  findings.forEach(f=>{ const li=document.createElement('li'); li.innerHTML=f; list.appendChild(li); });
+}
+
+/* ============================================================================
+   RENDER ALL
+   ============================================================================ */
+function renderAll(){
+  renderKPIs();
+  renderComposition();
+  renderQuality();
+  renderDistributions();
+  renderTargets();
+  renderOverlap();
+}
+renderAll();
+renderFindings();
+window.addEventListener('resize', () => { /* SVGs are viewBox-responsive; no-op */ });
+</script>
+</body>
+</html>

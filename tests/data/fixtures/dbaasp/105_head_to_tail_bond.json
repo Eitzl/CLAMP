@@ -1,0 +1,339 @@
+{
+  "id": 105,
+  "dbaaspId": "DBAASPS_105",
+  "name": "",
+  "majorName": "",
+  "sequence": "SwFkTkSk",
+  "sequenceLength": 8,
+  "nTerminus": null,
+  "cTerminus": null,
+  "synthesisType": {
+    "name": "Synthetic"
+  },
+  "complexity": {
+    "name": "Monomer"
+  },
+  "pdbs": [],
+  "pubChem": null,
+  "noteReference": "",
+  "url": "https://dbaasp.org/peptide-card?id=DBAASPS_105",
+  "structureModel": null,
+  "targetGroups": [
+    {
+      "name": "Gram+"
+    },
+    {
+      "name": "Cancer"
+    },
+    {
+      "name": "Mammalian Cell"
+    }
+  ],
+  "targetObjects": [
+    {
+      "name": "Lipid Bilayer"
+    }
+  ],
+  "physicoChemicalProperties": [
+    {
+      "name": "ID",
+      "value": "SwFkTkSk"
+    },
+    {
+      "name": "Normalized Hydrophobic Moment",
+      "value": "0.76"
+    },
+    {
+      "name": "Normalized Hydrophobicity",
+      "value": "1.51"
+    },
+    {
+      "name": "Net Charge",
+      "value": "3.00"
+    },
+    {
+      "name": "Isoelectric Point",
+      "value": "10.98"
+    },
+    {
+      "name": "Penetration Depth",
+      "value": "19"
+    },
+    {
+      "name": "Tilt Angle",
+      "value": "27"
+    },
+    {
+      "name": "Disordered Conformation Propensity",
+      "value": "-0.60"
+    },
+    {
+      "name": "Linear Moment",
+      "value": "0.57"
+    },
+    {
+      "name": "Propensity to in vitro Aggregation",
+      "value": "0.00"
+    },
+    {
+      "name": "Angle Subtended by the Hydrophobic Residues",
+      "value": "50.00"
+    },
+    {
+      "name": "Amphiphilicity Index",
+      "value": "2.24"
+    },
+    {
+      "name": "Propensity to PPII coil",
+      "value": "1.06"
+    }
+  ],
+  "monomers": [],
+  "sourceGenes": [],
+  "intrachainBonds": [
+    {
+      "id": 23,
+      "position1": 1,
+      "position2": 8,
+      "type": {
+        "id": 26139,
+        "name": "AMD",
+        "description": "Amide Bond"
+      },
+      "cycleType": {
+        "id": 11,
+        "intraChainBondTypeId": 0,
+        "name": "NCB",
+        "description": "N\u2013C-termini bond"
+      },
+      "chainParticipating": {
+        "id": 1,
+        "name": "MMB",
+        "description": "Mainchain-Mainchain Bond"
+      },
+      "note": null
+    }
+  ],
+  "interchainBonds": [],
+  "coordinationBonds": [],
+  "unusualAminoAcids": [],
+  "targetActivities": [
+    {
+      "id": 425,
+      "peptideId": 105,
+      "targetSpecies": {
+        "name": "Staphylococcus aureus ATCC 29213"
+      },
+      "activityMeasureGroup": {
+        "name": "MIC"
+      },
+      "activityMeasureValue": "MIC",
+      "concentration": "8",
+      "unit": {
+        "name": "\u00b5g/ml",
+        "description": ""
+      },
+      "ph": "",
+      "ionicStrength": "",
+      "saltType": "",
+      "medium": {
+        "name": "CAMHB",
+        "description": "Mueller Hinton Broth 2, Cation-Adjusted"
+      },
+      "cfu": "1E5-5E5",
+      "cfuGroup": {
+        "name": "1E5 - 1E6"
+      },
+      "note": "",
+      "reference": "1",
+      "activity": 8.0
+    },
+    {
+      "id": 426,
+      "peptideId": 105,
+      "targetSpecies": {
+        "name": "Staphylococcus aureus ATCC 29213"
+      },
+      "activityMeasureGroup": {
+        "name": "MIC"
+      },
+      "activityMeasureValue": "MIC",
+      "concentration": "16",
+      "unit": {
+        "name": "\u00b5g/ml",
+        "description": ""
+      },
+      "ph": "",
+      "ionicStrength": ".",
+      "saltType": "",
+      "medium": {
+        "name": "CAMHB",
+        "description": "Mueller Hinton Broth 2, Cation-Adjusted"
+      },
+      "cfu": "1E5-5E5",
+      "cfuGroup": {
+        "name": "1E5 - 1E6"
+      },
+      "note": " with 50% mouse serum.",
+      "reference": "1",
+      "activity": 16.0
+    },
+    {
+      "id": 167885,
+      "peptideId": 105,
+      "targetSpecies": {
+        "name": "Staphylococcus aureus ATCC 29213"
+      },
+      "activityMeasureGroup": {
+        "name": "MBC"
+      },
+      "activityMeasureValue": "MBC",
+      "concentration": "32",
+      "unit": {
+        "name": "\u00b5g/ml",
+        "description": ""
+      },
+      "ph": "",
+      "ionicStrength": "",
+      "saltType": "",
+      "medium": {
+        "name": "CAMHB",
+        "description": "Mueller Hinton Broth 2, Cation-Adjusted"
+      },
+      "cfu": "1E5-5E5",
+      "cfuGroup": {
+        "name": "1E5 - 1E6"
+      },
+      "note": "",
+      "reference": "1",
+      "activity": 32.0
+    },
+    {
+      "id": 167886,
+      "peptideId": 105,
+      "targetSpecies": {
+        "name": "Rat hepatocellular carcinoma H-4-II-E",
+        "description": "Rat hepatocellular carcinoma H-4-II-E"
+      },
+      "activityMeasureGroup": {
+        "name": "EC50"
+      },
+      "activityMeasureValue": "EC50",
+      "concentration": ">100",
+      "unit": null,
+      "ph": "",
+      "ionicStrength": "",
+      "saltType": "",
+      "medium": null,
+      "cfu": "",
+      "cfuGroup": null,
+      "note": "",
+      "reference": "1",
+      "activity": 0.0
+    }
+  ],
+  "antibiofilmActivities": [],
+  "uniprots": [],
+  "hemoliticCytotoxicActivities": [
+    {
+      "id": 30,
+      "peptideId": 105,
+      "targetCell": {
+        "name": "Mouse erythrocytes"
+      },
+      "activityMeasureForLysisGroup": {
+        "name": "50-60% Hemolysis"
+      },
+      "activityMeasureForLysisValue": "50% Hemolysis",
+      "concentration": ">400",
+      "unit": {
+        "name": "\u00b5g/ml",
+        "description": ""
+      },
+      "ph": null,
+      "ionicStrength": null,
+      "saltType": null,
+      "note": null,
+      "reference": "1",
+      "activity": 400.0
+    }
+  ],
+  "articles": [
+    {
+      "id": 118,
+      "journal": {
+        "name": "Antimicrob Agents Chemother",
+        "description": "ANTIMICROBIAL AGENTS AND CHEMOTHERAPY"
+      },
+      "year": 2005,
+      "volume": "49",
+      "pages": "3302\u20133310",
+      "title": "Systemic antibacterial activity of novel synthetic cyclic peptides",
+      "additional": "",
+      "pubmed": {
+        "pubmedId": "16048940",
+        "pubmedUrl": "http://www.ncbi.nlm.nih.gov/pubmed/16048940"
+      },
+      "authors": [
+        {
+          "name": "Dartois V",
+          "description": ""
+        },
+        {
+          "name": "Sanchez-Quesada J",
+          "description": ""
+        },
+        {
+          "name": "Cabezas E",
+          "description": ""
+        },
+        {
+          "name": "Chi E",
+          "description": ""
+        },
+        {
+          "name": "Dubbelde C",
+          "description": ""
+        },
+        {
+          "name": "Dunn C",
+          "description": ""
+        },
+        {
+          "name": "Granja J",
+          "description": ""
+        },
+        {
+          "name": "Gritzen C",
+          "description": ""
+        },
+        {
+          "name": "Weinberger D",
+          "description": ""
+        },
+        {
+          "name": "Ghadiri MR",
+          "description": ""
+        },
+        {
+          "name": "Parr TR Jr",
+          "description": ""
+        }
+      ]
+    }
+  ],
+  "synergies": [],
+  "smiles": [
+    {
+      "id": 5464392,
+      "smiles": "C[C@@H](O)[C@@H]1NC(=O)[C@@H](CCCCN)NC(=O)[C@H](CC2=CC=CC=C2)NC(=O)[C@@H](CC2=CNC3=CC=CC=C23)NC(=O)[C@H](CO)NC(=O)[C@@H](CCCCN)NC(=O)[C@H](CO)NC(=O)[C@@H](CCCCN)NC1=O",
+      "smilesImageUrl": "https://drive.google.com/uc?id=1En3hv-zm5eHRQajlGGZDv-C18JYQap3_",
+      "description": null,
+      "manuallyEdited": false,
+      "pubChemCid": null,
+      "pubChemCidUrl": "http://pubchem.ncbi.nlm.nih.gov/compound/null",
+      "lastUpdatedAt": "2026-03-26T05:02:25.410368"
+    }
+  ],
+  "opms": []
+}

@@ -1,0 +1,189 @@
+{
+  "id": 13,
+  "dbaaspId": "DBAASPS_13",
+  "name": "RNal",
+  "majorName": "",
+  "sequence": "RRXXRF",
+  "sequenceLength": 6,
+  "nTerminus": {
+    "name": "ACT",
+    "description": "Acetyl group; CH3CO"
+  },
+  "cTerminus": {
+    "name": "AMD",
+    "description": "Amide, NH2"
+  },
+  "synthesisType": {
+    "name": "Synthetic"
+  },
+  "complexity": {
+    "name": "Monomer"
+  },
+  "pdbs": [],
+  "pubChem": null,
+  "noteReference": "",
+  "url": "https://dbaasp.org/peptide-card?id=DBAASPS_13",
+  "structureModel": null,
+  "targetGroups": [
+    {
+      "name": "Gram+"
+    },
+    {
+      "name": "Gram-"
+    }
+  ],
+  "targetObjects": [
+    {
+      "name": "Lipid Bilayer"
+    }
+  ],
+  "physicoChemicalProperties": null,
+  "monomers": [],
+  "sourceGenes": [],
+  "intrachainBonds": [],
+  "interchainBonds": [],
+  "coordinationBonds": [],
+  "unusualAminoAcids": [
+    {
+      "id": 7,
+      "position": 3,
+      "modificationType": {
+        "name": "1-NAL",
+        "description": "1-Naphthylalanine, alpha-Naphthylalanine"
+      },
+      "beforeModification": "",
+      "note": ""
+    },
+    {
+      "id": 8,
+      "position": 4,
+      "modificationType": {
+        "name": "1-NAL",
+        "description": "1-Naphthylalanine, alpha-Naphthylalanine"
+      },
+      "beforeModification": "",
+      "note": ""
+    }
+  ],
+  "targetActivities": [
+    {
+      "id": 18,
+      "peptideId": 13,
+      "targetSpecies": {
+        "name": "Bacillus subtilis PY22"
+      },
+      "activityMeasureGroup": {
+        "name": "MIC"
+      },
+      "activityMeasureValue": "MIC",
+      "concentration": "4",
+      "unit": {
+        "name": "\u00b5M",
+        "description": ""
+      },
+      "ph": null,
+      "ionicStrength": null,
+      "saltType": null,
+      "medium": {
+        "name": "LBB",
+        "description": "Luria Bertani Broth"
+      },
+      "cfu": "2.5E5",
+      "cfuGroup": {
+        "name": "1E5 - 1E6"
+      },
+      "note": null,
+      "reference": "1",
+      "activity": 4.27708
+    },
+    {
+      "id": 19,
+      "peptideId": 13,
+      "targetSpecies": {
+        "name": "Escherichia coli DH5alpha"
+      },
+      "activityMeasureGroup": {
+        "name": "MIC"
+      },
+      "activityMeasureValue": "MIC",
+      "concentration": "16",
+      "unit": {
+        "name": "\u00b5M",
+        "description": ""
+      },
+      "ph": null,
+      "ionicStrength": null,
+      "saltType": null,
+      "medium": {
+        "name": "LBB",
+        "description": "Luria Bertani Broth"
+      },
+      "cfu": "2.5E5",
+      "cfuGroup": {
+        "name": "1E5 - 1E6"
+      },
+      "note": null,
+      "reference": "1",
+      "activity": 17.10832
+    }
+  ],
+  "antibiofilmActivities": [],
+  "uniprots": [],
+  "hemoliticCytotoxicActivities": [],
+  "articles": [
+    {
+      "id": 36,
+      "journal": {
+        "name": "J Pept Sci",
+        "description": "JOURNAL OF PEPTIDE SCIENCE"
+      },
+      "year": 2008,
+      "volume": "14",
+      "pages": "535-543",
+      "title": "The interaction of arginine- and tryptophan-rich cyclic hexapeptides with Escherichia coli membranes",
+      "additional": "",
+      "pubmed": {
+        "pubmedId": "17985396",
+        "pubmedUrl": "http://www.ncbi.nlm.nih.gov/pubmed/17985396"
+      },
+      "authors": [
+        {
+          "name": "Good L",
+          "description": ""
+        },
+        {
+          "name": "Bienert M",
+          "description": ""
+        },
+        {
+          "name": "Dathe M",
+          "description": ""
+        }
+      ]
+    }
+  ],
+  "synergies": [],
+  "smiles": [
+    {
+      "id": 5464899,
+      "smiles": "CC(=O)N[C@@H](CCCN=C(N)N)C(=O)N[C@@H](CCCN=C(N)N)C(=O)N[C@H](Cc1cccc2ccccc12)C(=O)N[C@H](Cc1cccc2ccccc12)C(=O)N[C@@H](CCCN=C(N)N)C(=O)N[C@@H](Cc1ccccc1)C(N)=O",
+      "smilesImageUrl": "https://drive.google.com/uc?id=1Pt71UMmJRy-AvTKlk4MJndjUp7Pi95HK",
+      "description": "This SMILES is generated based on the following tautomers:  || Arginine: C1 || You can find the tautomers' structures on the Help page.",
+      "manuallyEdited": false,
+      "pubChemCid": null,
+      "pubChemCidUrl": "http://pubchem.ncbi.nlm.nih.gov/compound/null",
+      "lastUpdatedAt": "2026-03-26T05:02:30.280448"
+    },
+    {
+      "id": 5464900,
+      "smiles": "CC(=O)N[C@@H](CCCNC(=N)N)C(=O)N[C@@H](CCCNC(=N)N)C(=O)N[C@H](Cc1cccc2ccccc12)C(=O)N[C@H](Cc1cccc2ccccc12)C(=O)N[C@@H](CCCNC(=N)N)C(=O)N[C@@H](Cc1ccccc1)C(N)=O",
+      "smilesImageUrl": "https://drive.google.com/uc?id=1OQs5hYVjEXKslbNTK-j_e8cb_wIQ55BM",
+      "description": "This SMILES is generated based on the following tautomers:  || Arginine: C2 || You can find the tautomers' structures on the Help page.",
+      "manuallyEdited": false,
+      "pubChemCid": null,
+      "pubChemCidUrl": "http://pubchem.ncbi.nlm.nih.gov/compound/null",
+      "lastUpdatedAt": "2026-03-26T05:02:30.284713"
+    }
+  ],
+  "opms": []
+}
