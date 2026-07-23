@@ -464,7 +464,7 @@ There is a second real tension worth resolving explicitly rather than picking on
 **This doc adopts doc 08's simpler framing as the default, with doc 07's stronger recommendation wired in as an explicit, triggered fallback — not silently dropped:**
 - **Default:** the embedding-based k-means clusters (§7) are what `folds.py` (§9) turns into the actual LOCO train/val/test rotation Phase 3/4 train and evaluate on. This is cheaper (one clustering pass vs. building a second full partition-based split), matches doc 08's literal roadmap deliverable list, and is what the rest of this project's design docs (04's shared-encoder architecture, 05's pilot) are written assuming exists.
 - **Homology partition's role:** an independently-derived artifact used exclusively for §10's leakage validation (the max-identity(test→train) diagnostic and the cluster-vs-community agreement check) — it does not itself feed `folds.py` under normal operation.
-- **The escalation trigger:** if §10's validation shows the embedding-cluster LOCO folds fail the leakage bar (max-identity(test→train) distribution is not comparably low to QMAP's reference range, §10.1) — the split-selection gate in the Definition of Done (§14) is **not met**, and the documented next step is exactly doc 07 §3.2's original recommendation: re-derive folds from the homology partition instead of the k-means clusters, or re-roll the k-means seed with the leakage diagnostic added as a secondary selection criterion (§7.3 already adds a size-floor criterion; this would add a leakage-floor criterion the same way). `folds.py` (§9) is written to accept **either** a `ClusterAssignment` table or a `HomologyCommunity` table as its partition input for exactly this reason — the fallback is a config change, not a rewrite.
+- **The escalation trigger:** if §10's validation shows the embedding-cluster LOCO folds fail any of §10.0's concrete pass/fail gates (most directly the max-identity(test→train) gate, §10.1) — the split-selection gate in the Definition of Done (§17) is **not met**, and the documented next step is exactly doc 07 §3.2's original recommendation: re-derive folds from the homology partition instead of the k-means clusters, or re-roll the k-means seed with the leakage diagnostic added as a secondary selection criterion (§7.3 already adds a size-floor criterion; this would add a leakage-floor criterion the same way). `folds.py` (§9) is written to accept **either** a `ClusterAssignment` table or a `HomologyCommunity` table as its partition input for exactly this reason — the fallback is a config change, not a rewrite.
 
 ---
 
@@ -522,7 +522,17 @@ def filter_for_task(
 
 ## 10. Module: `splitting/validate.py`
 
-Direct implementation of doc 07 §5's five checks, each a standalone function so the split report (§11) can run and log all five independently rather than one monolithic "validate" black box:
+Direct implementation of doc 07 §5's five checks, each a standalone function so the split report (§11) can run and log all five independently rather than one monolithic "validate" black box.
+
+### 10.0 Statistical threshold framework
+
+Every quantitative gate below resolves to a concrete pass/fail boundary via the standard `mean ± (k × std)` rule against an appropriate reference distribution, rather than a guessed absolute number or "comparably low" left to eyeball judgment:
+
+- **k = 2** (not 3) for every gate in this section. `k = 3` (±3σ, ~99.7% of a normal reference distribution) is the more permissive choice — fewer folds get flagged, at the cost of a wider blind spot. `k = 2` (~95%) is more sensitive. This is a precision-critical gate: a **false pass** here (a leaky fold silently accepted) propagates into every downstream Phase 3/4 result and is far more expensive than a **false flag** (a fine fold that gets a second manual look before proceeding, per the runbook's §16 step 8 "read `split_report.md` by hand" anyway). Lower `k` for higher-precision use cases is the deliberate trade being made — this is a documented default, revisit it if real data shows it's flagging too aggressively to be practically usable, but don't silently loosen it without noting why.
+- Each check below states its own reference distribution (what `mean`/`std` are computed over) and direction (upper-tail, lower-tail, or two-sided) — these differ per check because each check's actual leakage failure mode points a different way (e.g. anomalously *small* NN distance is the failure mode for check 2, not anomalously large).
+- Every one of these is a computed boundary, not a hardcoded constant — `report.py` (§11) must show the actual computed `mean`, `std`, and resulting boundary alongside the pass/fail result, not just the verdict, so a human reviewing `split_report.md` can see how close a fold came to the line.
+
+### 10.1 The five checks, with concrete pass/fail gates
 
 ```python
 def max_identity_test_to_train(
@@ -532,7 +542,16 @@ def max_identity_test_to_train(
     peptide in that fold. Returns long-form (fold_id, peptide_uid, max_identity).
     Report median/90th-pctile per fold and compare against QMAP's own
     published reference (homology split: median ~50%, 90th pctile ~57%;
-    random split: median ~90%, 90th pctile ~100%) — doc 07 §5 point 1."""
+    random split: median ~90%, 90th pctile ~100%) — doc 07 §5 point 1.
+
+    Pass/fail gate (§10.0's k=2 rule, upper-tail — high identity is the
+    failure mode): per fold, compute mean and std of that fold's
+    max_identity distribution. FAIL if mean + 2*std > homology_identity_threshold
+    (§5's setting, 0.60 by default) — i.e., the fold's own identity
+    distribution's upper range reaches into "as similar as this project's
+    own definition of too-similar" (§8.2), not just eyeballing whether the
+    median looks QMAP-shaped. This reuses the existing threshold setting
+    rather than inventing a second, uncoordinated number."""
     ...
 
 def embedding_nn_distance(
@@ -540,7 +559,17 @@ def embedding_nn_distance(
 ) -> pd.DataFrame:
     """Per test peptide, nearest-neighbor distance to any train peptide in
     embedding space; compare within-cluster vs. cross-cluster NN distance
-    distributions. Doc 07 §5 point 2 — cheap since embeddings already exist."""
+    distributions. Doc 07 §5 point 2 — cheap since embeddings already exist.
+
+    Pass/fail gate (§10.0's k=2 rule, lower-tail — anomalously CLOSE test/
+    train pairs are the failure mode, i.e. near-duplicate leakage): compute
+    a background reference distribution from TRAIN peptides only — each
+    train peptide's NN distance to its nearest OTHER train peptide
+    (excluding itself), per fold, giving mean mu_bg and std sigma_bg. FAIL
+    if the test-to-train NN distance distribution's own mean falls below
+    `mu_bg - 2*sigma_bg` — test peptides are, on average, meaningfully
+    closer to train peptides than train peptides typically are to each
+    other, the direct embedding-space signature of near-duplicate leakage."""
     ...
 
 def threshold_sensitivity_probe(
@@ -562,22 +591,46 @@ def threshold_sensitivity_probe(
     NOTE: this frozen-probe machinery is the same shape as doc 11 (Phase 3)
     §4's frozen-encoder probe — reuse doc 11's probe function here rather
     than writing a second one, once Phase 3 exists; for Phase 2 alone, an
-    ElasticNet-only inline implementation is enough."""
+    ElasticNet-only inline implementation is enough.
+
+    Pass/fail gate (§10.0's k=2 rule, applied to whether the expected trend
+    is statistically real rather than noise): compute the Fisher-z standard
+    error of the Spearman rho estimate at threshold=0.4 (the strictest,
+    most leakage-safe re-split, smallest effective n). FAIL if
+    rho(threshold=1.0) does not exceed rho(threshold=0.4) by at least
+    `2 * SE` — i.e., the expected QMAP-style rise from strict to permissive
+    threshold must be large enough to not plausibly be sampling noise at
+    this project's own sample size, not just numerically positive."""
     ...
 
 def label_balance_check(fold_assignments: list[FoldAssignment], dataset: pd.DataFrame) -> pd.DataFrame:
     """Per fold, per task: mean/variance/min/max of the log-transformed
     label across train/val/test. Doc 07 §5 point 4 — flags a cluster that
-    accidentally concentrates extreme values."""
+    accidentally concentrates extreme values.
+
+    Pass/fail gate (§10.0's k=2 rule, two-sided — either direction of
+    imbalance is a problem): compute the overall (whole-dataset, every
+    fold combined) mean and std of the log-transformed label, per task.
+    FAIL if any single fold's train, val, or test split mean falls outside
+    `overall_mean +/- 2*overall_std` — that split concentrates unusually
+    high or low label values relative to the dataset as a whole."""
     ...
 
 def composition_check(fold_assignments: list[FoldAssignment], dataset: pd.DataFrame) -> pd.DataFrame:
     """Per fold: fraction cyclic, fraction dual-labeled (has both HC50 and
-    MIC). Doc 07 §5 point 5."""
+    MIC). Doc 07 §5 point 5.
+
+    Pass/fail gate (§10.0's k=2 rule, two-sided, binomial-proportion form):
+    let p = the overall dataset's fraction (cyclic, or dual-labeled),
+    n = the fold's test-set size, SE = sqrt(p*(1-p)/n) (normal
+    approximation to a binomial proportion's standard error). FAIL if the
+    fold's own observed fraction falls outside `p +/- 2*SE`."""
     ...
 ```
 
 **Agreement diagnostic** (doc 07 §3.2, feeding the §8.4 escalation decision): compute the Adjusted Rand Index between the k-means `cluster_id` labels and the homology `community_id` labels over the shared peptide set. High agreement is reassuring; low agreement is reported, not treated as a bug per se (embedding clusters can legitimately separate on chemistry axes sequence identity doesn't capture) — but it is the first thing to check if §10's leakage numbers come back bad.
+
+**"Low agreement" gate, made concrete** (§10.0's k=2 rule, applied via a permutation null rather than a raw mean/std, since a single ARI value has no direct std of its own): permute the `community_id` labels uniformly at random (fixed seed, ~1000 iterations), recomputing ARI against the fixed `cluster_id` labels each time, giving a null-distribution mean `mu_null` (≈0 by construction) and std `sigma_null`. Flag as **low agreement** (informational, per above — not itself a DoD blocker) if the observed ARI `< mu_null + 2*sigma_null` — i.e., the real agreement is statistically indistinguishable from randomly-relabeled chance agreement, not merely a smaller-than-hoped-for positive number.
 
 ---
 
@@ -588,8 +641,8 @@ Same shape as Phase 1's `datasheet.py` (doc 09 §9): a reporting module, not a t
 - The full k-sweep table (§7.2) and which k/seed was selected and why (§7.3).
 - Per-fold sizes and train/val/test proportions (doc 07 §3.4's "report actual sizes, don't assume balance").
 - The homology partition's method used (GraphPart vs. Leiden fallback, §8.3) and the identity threshold used, flagged as placeholder-vs-re-derived (§8.2).
-- The ARI agreement number between embedding clusters and homology communities.
-- All five §10 validation tables, with an explicit **pass/fail** read against the DoD gate in §14.
+- The ARI agreement number, its permutation-null `mean`/`std`, and the resulting low-agreement flag (§10's agreement-diagnostic gate).
+- All five §10 validation tables, each with its computed reference `mean`, `std`, resulting boundary, and pass/fail read against its §10.0 gate — the boundary itself, not just the verdict, so a reviewer can see how close a fold came to the line.
 - Whether the escalation trigger in §8.4 fired, and if so, which fallback path was taken.
 
 ---
@@ -671,7 +724,7 @@ def build_folds(force: bool = False): ...
 
 @app.command()
 def validate() -> None:
-    """Prints the pass/fail read against the §14 DoD gate to stdout in
+    """Prints the pass/fail read against the §10.0/§17 gates to stdout in
     addition to writing split_report.{json,md}."""
     ...
 
@@ -744,9 +797,9 @@ Equivalently, `clamp-split run-all` executes 3–7 in order; running individuall
 - [ ] `splits/cluster_assignments.parquet` reflects exactly one joint k-means run (not per-task runs) over the union of HC50/MIC peptides, with the selected k's rationale (scores, size-floor check) recorded in `cluster_sweep.json`.
 - [ ] `splits/homology_communities.parquet` exists, generated via GraphPart or the documented Leiden fallback, with the threshold used explicitly flagged as placeholder-vs-re-derived.
 - [ ] `splits/folds/fold_{i}.parquet` exist for every k rotation, and `folds.filter_for_task` produces per-task train/val/test sets where every peptide's role is identical regardless of task.
-- [ ] `split_report.{json,md}` contains all five §10 diagnostics plus the ARI agreement number, and has been **read** — not just generated — by whoever runs this, per the same "a report nobody reads doesn't close anything" standard doc 09 §15 held Phase 1's datasheet to.
-- [ ] The max-identity(test→train) distribution has been explicitly compared against QMAP's reference numbers (median ≈50%, 90th pctile ≈57% for a homology-safe split; median ≈90%, 90th pctile ≈100% for a leaky one) and the result — pass or fail — is recorded, not implied.
-- [ ] If the leakage bar failed, the §8.4 escalation path was actually taken (not just noted as an option) and the resulting folds re-validated.
+- [ ] `split_report.{json,md}` contains all five §10 diagnostics plus the ARI agreement number, each with its computed `mean`/`std`/boundary and pass/fail read against its §10.0 gate, and has been **read** — not just generated — by whoever runs this, per the same "a report nobody reads doesn't close anything" standard doc 09 §15 held Phase 1's datasheet to.
+- [ ] Every fold cleared every §10.0 gate (max-identity, embedding NN distance, threshold-sensitivity significance, label balance, composition) — not just "looks comparable to QMAP," an actual computed pass on every gate, for every fold.
+- [ ] If any gate failed, the §8.4 escalation path was actually taken (not just noted as an option) and the resulting folds re-validated against the same §10.0 gates.
 - [ ] `pytest` passes for the full `tests/splitting/` suite in §14.
 
 ---
