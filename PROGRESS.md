@@ -12,8 +12,18 @@ do not touch docs 10/11 (owned by a concurrent agent).
       `schema.py`, `config.py`, `pyproject.toml`. — 2026-07-23T16:52:00Z: read all of
       the above; grounding module layout in the actual `src/clamp/data/*` code rather
       than inventing a fictional structure.
-- [ ] Draft doc 12 (Phase 4) outline.
-- [ ] Write doc 12 in full.
+- [x] Draft doc 12 (Phase 4) outline: package layout (`models/`, `training/`),
+      architecture module (pooling/heads/multitask model), masked multitask loss,
+      stratified batch sampler, P2 two-stage curriculum, P3 head-addition +
+      copy-vs-Xavier init ablation, checkpoint format, CLI, test plan, runbook, DoD,
+      open risks. — 2026-07-23T17:20:00Z: outline settled, matches doc 09's section
+      shape (0 scope, N module designs, testing, storage, runbook, DoD, open risks).
+- [x] Write doc 12 in full. — 2026-07-23T17:20:00Z: written to
+      `MD_design_docs/12_phase4_implementation_design.md`. Includes concrete
+      `clamp.models.*`/`clamp.training.*` class/function signatures, an explicit
+      §2 "data contract consumed from Phase 2/3" section (since docs 10/11 are
+      concurrent and unread), checkpoint directory format, `clamp-train` CLI,
+      test plan, runbook, DoD, and 8 flagged open risks.
 - [ ] Draft doc 13 (Phase 5) outline.
 - [ ] Write doc 13 in full.
 - [ ] Self-review both docs against doc 09's bar.
