@@ -58,7 +58,12 @@ def convert_via_p2smi(record: PeptideRecord) -> tuple[str | None, list[str]]:
     Returns (None, dropped) only if the base sequence itself contains a
     character p2smi doesn't recognize at all.
     """
-    sequence = list((record.sequence_canonical or record.sequence_raw).upper())
+    # Case is NOT normalized before this point: p2smi's own residue table
+    # (p2smi.utilities.aminoacids.all_aminos) uses case to distinguish D-
+    # from L-form standard residues (e.g. 'a' = D-Alanine, 'A' = L-Alanine)
+    # — uppercasing here would silently generate the wrong stereochemistry
+    # for any D-containing sequence.
+    sequence = list(record.sequence_canonical or record.sequence_raw)
     dropped: list[str] = []
 
     tag = build_p2smi_fasta_header(record)

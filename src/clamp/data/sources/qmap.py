@@ -71,6 +71,18 @@ def _sample_to_records(sample) -> list[PeptideRecord]:
 
     records: list[PeptideRecord] = []
     for target_name, target in sample.targets.items():
+        # QMAP's `consensus` is an aggregate that can be NaN (the module
+        # docstring flags this for HemolyticActivity, and Target shares the
+        # same min/max/consensus shape). The HC50 branch below already
+        # guards against a NaN consensus by omitting the row entirely;
+        # without the same guard here a NaN target consensus produced a
+        # phantom MIC row — target species + unit populated but no usable
+        # value — which is both asymmetric with the HC50 handling and
+        # inflates the datasheet's species-frequency / row counts with
+        # label-less rows. Skip a NaN (or missing) consensus per-target,
+        # keeping any sibling targets that do have a real consensus.
+        if target.consensus is None or math.isnan(target.consensus):
+            continue
         records.append(
             PeptideRecord(
                 **base_kwargs,

@@ -38,20 +38,44 @@ class DedupResult(BaseModel):
 
 
 def canonicalize_sequence(sequence_raw: str, source: Source) -> str:
-    """Strip/uppercase + resolve source-specific non-standard 1-letter
-    codes to a common vocabulary."""
-    sequence = sequence_raw.strip().upper()
+    """Strip + resolve source-specific non-standard 1-letter codes to a
+    common vocabulary. Deliberately does NOT fold case: lowercase denotes
+    a D-amino-acid, concretely in p2smi's own residue table
+    (p2smi.utilities.aminoacids.all_aminos — e.g. 'D-Alanine' has Letter
+    'a' vs 'A' for the L-form) as well as by general convention. QMAP
+    relies on this directly (its sample sequences encode D-residues as
+    lowercase, e.g. "SwFkTkSk"); folding case here would silently collapse
+    a peptide onto the same peptide_uid as its stereochemically-distinct
+    D/L counterpart, defeating dedup's whole leakage-prevention purpose
+    (data/README.md §3.6)."""
+    sequence = sequence_raw.strip()
     overrides = _SOURCE_LETTER_OVERRIDES.get(source)
     if overrides:
         sequence = "".join(overrides.get(ch, ch) for ch in sequence)
     return sequence
 
 
+def _normalize_mod_code(value: str | None) -> str | None:
+    """Case/whitespace-normalize a terminal-modification or unusual-residue
+    code before it feeds peptide_uid, so incidental formatting differences
+    (e.g. "act" vs "ACT") don't split what should be the same modification
+    across sources. Deliberately not a full-name -> abbreviation mapping:
+    real pulled DBAASP data already reports short codes here (ACT, AMD,
+    C16, ...), matching QMAP's convention, so there's no observed case
+    needing a translation table yet. Grow one here, the same way
+    _SOURCE_LETTER_OVERRIDES is meant to grow, if a source turns up that
+    actually spells modifications out."""
+    if value is None:
+        return None
+    normalized = value.strip().upper()
+    return normalized or None
+
+
 def modification_signature(record: PeptideRecord) -> tuple:
     return (
-        record.nterm_mod,
-        record.cterm_mod,
-        tuple(sorted((r.position, r.modification_type) for r in record.unusual_residues)),
+        _normalize_mod_code(record.nterm_mod),
+        _normalize_mod_code(record.cterm_mod),
+        tuple(sorted((r.position, _normalize_mod_code(r.modification_type)) for r in record.unusual_residues)),
         record.cyclization_type,
     )
 

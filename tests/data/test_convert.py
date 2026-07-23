@@ -203,6 +203,16 @@ class TestConvertDispatch:
         assert result.fidelity_tier == FidelityTier.PARTIAL
         assert any(d.startswith("cterm_mod:Amidation") for d in result.dropped_modifications)
 
+    def test_lowercase_d_residue_alone_routes_to_p2smi(self):
+        """No cyclization/unusual_residues/mods declared — a bare lowercase
+        letter in the sequence (QMAP's D-amino-acid convention) must still
+        trigger p2smi routing. Previously this fell straight through to the
+        plain RDKit path, which ignores letter case entirely and always
+        emits the L-form regardless (confirmed directly: Chem.MolFromSequence
+        produces identical output for 'A' and 'a')."""
+        result = convert_record(_linear_record("KaK"))
+        assert result.smiles_source == SmilesSource.P2SMI
+
     def test_both_p2smi_and_backbone_fallback_fail_yields_failed_tier(self):
         """Forces convert_via_p2smi's terminal (None, dropped) return path —
         the ONLY way convert_record even considers backbone fallback — by
@@ -274,6 +284,19 @@ class TestP2smiAdapter:
 
     def test_none_cyclization_yields_empty_tag(self):
         assert build_p2smi_fasta_header(_linear_record()) == ""
+
+    def test_lowercase_residue_preserves_d_stereochemistry(self):
+        """Regression guard for the case-folding bug: p2smi's own residue
+        table uses case to distinguish D/L (e.g. 'a' = D-Alanine vs 'A' =
+        L-Alanine, per p2smi.utilities.aminoacids.all_aminos) —
+        uppercasing before conversion silently produced an all-L SMILES
+        for any D-containing peptide regardless of what the source data
+        actually said."""
+        upper_smiles, _ = convert_via_p2smi(_linear_record("KAK"))
+        lower_smiles, _ = convert_via_p2smi(_linear_record("KaK"))
+        assert upper_smiles is not None
+        assert lower_smiles is not None
+        assert upper_smiles != lower_smiles
 
     def test_unplaceable_disulfide_on_cys_free_sequence_is_dropped_not_silent(self):
         """A sequence with no disulfide-capable residues can't actually

@@ -38,8 +38,46 @@ class TestPeptideUid:
         uids = {compute_peptide_uid(seq, sig) for _ in range(5)}
         assert len(uids) == 1
 
-    def test_canonicalize_sequence_strips_and_uppercases(self):
-        assert canonicalize_sequence(" kwklfkkiek ", Source.DBAASP) == "KWKLFKKIEK"
+    def test_canonicalize_sequence_strips_but_preserves_case(self):
+        """Case is NOT folded: lowercase denotes a D-amino-acid (QMAP's own
+        convention, and p2smi's — see dedup.canonicalize_sequence's
+        docstring). Only surrounding whitespace is stripped."""
+        assert canonicalize_sequence(" kwklfkkiek ", Source.DBAASP) == "kwklfkkiek"
+        assert canonicalize_sequence(" KWKLFKKIEK ", Source.DBAASP) == "KWKLFKKIEK"
+
+    def test_d_and_l_form_sequences_get_different_uids(self):
+        """Regression guard: canonicalize_sequence used to uppercase
+        everything, so a D-residue-containing peptide (lowercase, per
+        QMAP's convention) and its all-L counterpart collapsed onto the
+        same peptide_uid — silently merging two chemically distinct
+        molecules and defeating the split-safety guarantee this stage
+        exists for (data/README.md §3.6)."""
+        sig = modification_signature(_record(Source.QMAP, "1"))
+        upper_seq = canonicalize_sequence("KWKLFKKIEK", Source.QMAP)
+        lower_seq = canonicalize_sequence("kwklfkkiek", Source.QMAP)
+        assert compute_peptide_uid(upper_seq, sig) != compute_peptide_uid(lower_seq, sig)
+
+
+class TestModificationSignatureNormalization:
+    """F3: incidental case/whitespace differences in terminal-modification
+    codes shouldn't split what should be the same modification across
+    sources — see dedup._normalize_mod_code's docstring for why this is a
+    normalization pass, not a full name -> abbreviation mapping table."""
+
+    def test_mod_code_case_difference_does_not_change_signature(self):
+        a = _record(Source.DBAASP, "1", nterm_mod="ACT")
+        b = _record(Source.QMAP, "2", nterm_mod="act")
+        assert modification_signature(a) == modification_signature(b)
+
+    def test_mod_code_whitespace_difference_does_not_change_signature(self):
+        a = _record(Source.DBAASP, "1", cterm_mod="AMD")
+        b = _record(Source.QMAP, "2", cterm_mod=" AMD ")
+        assert modification_signature(a) == modification_signature(b)
+
+    def test_genuinely_different_mod_codes_still_differ(self):
+        a = _record(Source.DBAASP, "1", nterm_mod="ACT")
+        b = _record(Source.QMAP, "2", nterm_mod="SUC")
+        assert modification_signature(a) != modification_signature(b)
 
 
 class TestDedupMerge:
