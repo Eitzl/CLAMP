@@ -162,15 +162,21 @@ class BaselineResult(BaseModel):
 
 
 class PilotResult(BaseModel):
-    """One row of the full pilot grid — the unit the report (§11) tabulates."""
+    """One row of the full pilot grid — the unit the report (§11) tabulates
+    and rank_candidates (§10) ranks on. For eval_mode == FULL_FINETUNE this
+    is an aggregate over every seed in `pilot_finetune_seeds` (§9.3), never
+    a single seed's result — see §9.3 for why and how."""
     candidate: str
     eval_mode: EvalMode
     task: Task
     mae: float
-    spearman_rho: float | None    # None iff compute_metrics saw a non-finite value (§10) — a
-                                    # degenerate (near-constant) prediction, not a crash
+    spearman_rho: float | None    # None iff compute_metrics saw a non-finite value (§10), OR
+                                    # (FULL_FINETUNE only) any contributing seed's was None — see §9.3
     pearson_r: float | None       # same None convention as spearman_rho
     wall_clock_s: float
+    n_seeds: int = 1               # 1 for FROZEN_PROBE (no seed variation); len(pilot_finetune_seeds)
+                                     # for FULL_FINETUNE — makes the aggregation auditable from the row
+                                     # itself, not just inferable from settings
 ```
 
 ---
@@ -422,6 +428,41 @@ def finetune_candidate(
 
 **Early-stopping logic as an independently testable unit:** factor the "has validation metric stopped improving for `patience` epochs" check into its own small pure function (`should_stop(history: list[float], patience: int) -> bool`) rather than inlining it in the training loop — this is the one piece of `finetune_candidate` testable without a real model or GPU (§14), by feeding it a synthetic loss history.
 
+### 9.3 Aggregating across seeds — mean, not best-seed
+
+`finetune_candidate` runs once per seed in `settings.pilot_finetune_seeds` (2 seeds for the pilot, §5), producing one `FineTuneResult` per (candidate, task, seed). `rank_candidates` (§10) and the report (§11) need exactly one `PilotResult` per (candidate, task) for `eval_mode == FULL_FINETUNE` — this is where those per-seed results collapse into one, and the aggregation rule is **mean across seeds, never best-seed-by-test-performance**. Selecting whichever seed happened to score highest on the test set is optimizing on the same data the result is reported from — the standard p-hacking pattern, dressed up as "picking the best run." Mean-across-seeds is the standard, defensible choice and is what's implemented here.
+
+```python
+def aggregate_finetune_results(results: list[FineTuneResult]) -> PilotResult:
+    """Aggregates every seed's FineTuneResult for one (candidate, task) into
+    a single PilotResult(eval_mode=FULL_FINETUNE). All entries in `results`
+    must share the same candidate and task (raise if not — a caller bug,
+    not a data condition to handle gracefully).
+
+    - mae, spearman_rho, pearson_r: arithmetic mean across seeds. If ANY
+      seed's spearman_rho (or pearson_r) is None (§10's non-finite-metric
+      policy — that seed's fine-tune produced a degenerate, near-constant
+      prediction), the AGGREGATE for that metric is None too, not the mean
+      of the remaining finite seeds. Silently averaging over fewer seeds
+      would hide exactly the instability a None is meant to surface — a
+      candidate that's degenerate under even one of two seeds is not one
+      you want silently smoothed into looking stable.
+    - wall_clock_s: SUM across seeds, not mean — this is a compute-cost
+      figure (feeds rank_candidates' cost-adjusted score, §10), and the
+      real compute spent evaluating this candidate is the total across
+      every seed actually run, not a per-run average.
+    - n_seeds: len(results) — carried onto PilotResult so the aggregation
+      is visible on the row itself (§4's note).
+
+    Raises ValueError if `results` is empty, or if pilot_finetune_seeds
+    was configured with N seeds but fewer than N FineTuneResults are
+    passed in (an incomplete aggregation is a bug to surface immediately,
+    not silently aggregate over whatever happened to finish)."""
+    ...
+```
+
+`run_grid` (§12) calls this once per (candidate, task) after that candidate's `finetune_candidate` has run for every configured seed, before writing the resulting `PilotResult` to `pilot_results.parquet` — the per-seed `FineTuneResult`s themselves are still written individually to `finetune_runs/{candidate}_{task}_seed{n}.json` (§15) for auditability (a reviewer who wants to check "was this candidate's seed-to-seed variance small?" can, without needing the aggregate to have also carried the raw per-seed numbers).
+
 ---
 
 ## 10. Modules: `metrics.py` and `decision.py`
@@ -569,10 +610,14 @@ def finetune(candidate: str, include_v1: bool = False) -> None: ...
 @app.command(name="run-grid")
 def run_grid(full: bool = False, include_v1: bool = False) -> None:
     """baseline + probe + finetune for every candidate in the selected
-    registry (§7.5), writing pilot_results.parquet incrementally so a
-    partial run (e.g. interrupted mid-grid) isn't fully lost — mirrors
-    Phase 1's resumable-pull philosophy (doc 09 §5) applied to a compute
-    grid instead of an API pull. Also writes candidate_outcomes.json (§10,
+    registry (§7.5). For each candidate/task's FULL_FINETUNE pass, runs
+    finetune_candidate once per settings.pilot_finetune_seeds and calls
+    aggregate_finetune_results (§9.3) on the resulting FineTuneResults
+    before writing the single aggregated PilotResult row — never writes a
+    per-seed row to pilot_results.parquet. Writes pilot_results.parquet
+    incrementally so a partial run (e.g. interrupted mid-grid) isn't fully
+    lost — mirrors Phase 1's resumable-pull philosophy (doc 09 §5) applied
+    to a compute grid instead of an API pull. Also writes candidate_outcomes.json (§10,
     §15): every candidate not selected this run (v1 without --include-v1)
     gets a CandidateOutcome(status=SKIPPED); a candidate whose load_v2/
     load_v1 call raises gets LOAD_FAILED with the exception recorded in
@@ -613,6 +658,7 @@ def report() -> None: ...
 | `probe.frozen_probe` | Unit test on synthetic embeddings + labels with a known separable structure, both `train_mask`/`test_mask` variants | Pure sklearn logic on synthetic data — same philosophy as doc 10 §14's cluster tests. |
 | `finetune.should_stop` (early-stopping helper, §9.2) | Parametrized `pytest` cases: a strictly-improving history never stops, a flat/degrading history for exactly `patience` epochs stops, an improve-then-plateau history stops at the right epoch | This is the one piece of the real training loop that's meaningfully testable without a GPU or a real model — isolate it precisely so it can be. |
 | `finetune.PilotRegressionHead.forward` | A forward-pass shape/gradient-flow test using a tiny fake encoder (a `nn.Embedding` + `nn.Linear` stand-in returning a `last_hidden_state`-shaped tensor) — confirm output shape is `(batch,)` and gradients reach the fake encoder's parameters | Confirms the mean-pool-with-gradients wiring (doc 10 §6.2's forward-compat claim) actually holds, without needing PeptideCLM-2 itself. |
+| `finetune.aggregate_finetune_results` | Unit tests on synthetic `FineTuneResult` lists: 2-seed mean matches hand-computed mean for mae/spearman_rho/pearson_r; `wall_clock_s` sums rather than averages; any single seed with `spearman_rho=None` makes the aggregate's `spearman_rho` `None` too (not the mean of the remaining seed); raises on empty input; raises on fewer results than `len(pilot_finetune_seeds)`; raises on mismatched candidate/task within one call | This is the fix for the multi-seed p-hacking risk (§9.3) — worth a regression test per behavior, especially the "one degenerate seed poisons the aggregate" case, since that's the one a careless reimplementation would most easily get wrong by silently mean-ing over `[x for x in values if x is not None]`. |
 | `metrics.compute_metrics` | Unit tests against small arrays with hand-computed MAE/Spearman/Pearson | Cheap, scipy/sklearn do the real math; confirms correct field mapping. |
 | `decision.rank_candidates` | Unit tests covering: a clear winner clears baseline on both tasks; nothing clears baseline (confirm `winner == "none"`, not an exception); a tie-breaking-by-compute-cost case; an escalation-triggered case built from explicit `CandidateOutcome(status=LOAD_FAILED)` entries (not inferred from missing `PilotResult`s); a `SKIPPED` v1 outcome correctly excluded from ranking without affecting escalation; a `None` `spearman_rho` (degenerate prediction) correctly treated as non-clearing rather than crashing or sorting as if it were a number; a missing outcome for a `v2_candidate_names` entry raising rather than being silently skipped | This is the actual decision logic doc 05 §6 spells out as a numbered rule list, now including the status-distinction and finite-metric fixes — worth a regression test per condition, not just a happy-path test. |
 | `report.py` | Snapshot-style test: fixed synthetic `PilotResult`/`DecisionResult` inputs produce `pilot_report.json`/`.md` whose numbers agree | Same drift-prevention rationale as docs 09/10. |
@@ -629,7 +675,9 @@ def report() -> None: ...
 data/
 └── model_selection/
     ├── baseline_results.json          # BaselineResult per task
-    ├── pilot_results.parquet          # every successful PilotResult row (candidate x eval_mode x task)
+    ├── pilot_results.parquet          # every successful PilotResult row (candidate x eval_mode x task) —
+                                         # FULL_FINETUNE rows are the §9.3 mean-across-seeds aggregate,
+                                         # never a single seed's result; see finetune_runs/ for per-seed detail
     ├── candidate_outcomes.json         # one CandidateOutcome per candidate considered this run
                                          # (§10) — SUCCEEDED/LOAD_FAILED/SKIPPED/INCOMPLETE, the
                                          # decision stage's actual input, not pilot_results.parquet directly
