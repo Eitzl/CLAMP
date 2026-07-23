@@ -5,10 +5,11 @@ docstring for why pull()/parse() don't use the plain URL-list shape.
 """
 
 import json
+import math
 
 
 from clamp.data.schema import CyclizationType, Source
-from clamp.data.sources.qmap import QmapDownloader, _infer_cyclization, load_cached_records
+from clamp.data.sources.qmap import QmapDownloader, _infer_cyclization, _sample_to_records, load_cached_records
 
 
 class _FakeBond:
@@ -16,6 +17,26 @@ class _FakeBond:
         self.src = src
         self.dst = dst
         self.bond_type = bond_type
+
+
+class _FakeConsensus:
+    """Minimal stand-in for QMAP's Target / HemolyticActivity objects —
+    _sample_to_records only ever reads `.consensus`."""
+
+    def __init__(self, consensus):
+        self.consensus = consensus
+
+
+class _FakeSample:
+    def __init__(self, id, sequence, targets, hc50=None, smiles=None, nterminal=None, cterminal=None, bonds=None):
+        self.id = id
+        self.sequence = sequence
+        self.targets = targets
+        self.hc50 = hc50
+        self.smiles = smiles or []
+        self.nterminal = nterminal
+        self.cterminal = cterminal
+        self.bonds = bonds or []
 
 
 class TestInferCyclization:
@@ -84,6 +105,52 @@ class TestParseFixtures:
         assert hc50_rows
         assert hc50_rows[0].hc50_unit == "uM"
         assert all(not r.is_cyclic for r in records)
+
+
+class TestNaNConsensusHandling:
+    """Regression coverage: QMAP's aggregated `consensus` can be NaN, and
+    the MIC branch must handle it the same way the HC50 branch already does
+    (omit the row), rather than emitting a phantom label-less MIC row."""
+
+    def test_nan_target_consensus_yields_no_mic_row(self):
+        sample = _FakeSample(
+            id=1,
+            sequence="KWKLFKKIEK",
+            targets={"Escherichia coli": _FakeConsensus(math.nan)},
+            hc50=None,
+        )
+        records = _sample_to_records(sample)
+        # No real MIC value and no HC50 -> the only record should be the
+        # label-less fallback row, never a MIC row carrying a NaN value.
+        assert all(r.mic_value is None for r in records)
+        assert all(r.mic_target_species is None for r in records)
+
+    def test_nan_consensus_target_skipped_but_valid_sibling_target_kept(self):
+        sample = _FakeSample(
+            id=2,
+            sequence="KWKLFKKIEK",
+            targets={
+                "Escherichia coli": _FakeConsensus(math.nan),
+                "Staphylococcus aureus": _FakeConsensus(4.0),
+            },
+        )
+        records = _sample_to_records(sample)
+        mic_rows = [r for r in records if r.mic_value is not None]
+        assert len(mic_rows) == 1
+        assert mic_rows[0].mic_target_species == "Staphylococcus aureus"
+        assert mic_rows[0].mic_value == 4.0
+
+    def test_valid_consensus_still_produces_mic_row(self):
+        sample = _FakeSample(
+            id=3,
+            sequence="KWKLFKKIEK",
+            targets={"Escherichia coli": _FakeConsensus(2.0)},
+        )
+        records = _sample_to_records(sample)
+        mic_rows = [r for r in records if r.mic_value is not None]
+        assert len(mic_rows) == 1
+        assert mic_rows[0].mic_value == 2.0
+        assert mic_rows[0].mic_unit == "uM"
 
 
 class TestParseAndLoadCachedRecords:
