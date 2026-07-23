@@ -1,10 +1,14 @@
 """Shared pytest fixtures.
 
-Fixture files under tests/data/fixtures/{source}/ are meant to be real,
-captured records per source (doc 09 §12) — currently empty placeholders
-(tests/data/fixtures/{dbaasp,dramp,hemolytik2,hemopi2,qmap}/) pending a
-first real pull. Populate these before writing the tests that depend on
-them.
+Fixture files under tests/data/fixtures/{source}/ are real records
+captured live from each source on 2026-07-22 (doc 09 §12) — a handful of
+representative rows per source (DBAASP: a plain monomer, a multimer, an
+unusual-residue record, a head-to-tail-bonded record; DRAMP: general_amps
++ general_smiles samples with an overlapping id to exercise the join;
+Hemolytik2: a captured API response spanning clean/percentage/cyclic/
+non-hemolytic activity-text forms; HemoPI2: a slice of the real GitHub
+Dataset/ CSVs; QMAP: a slice of real DBAASPDataset samples spanning DSB/
+head-to-tail-AMD/plain bond shapes) — not hand-invented shapes.
 """
 
 from pathlib import Path

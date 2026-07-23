@@ -10,10 +10,17 @@ case; this module only produces the SMILES, it doesn't decide which
 smiles_source label applies.
 """
 
+from rdkit import Chem
+
 from clamp.data.schema import PeptideRecord
 
 
-def sequence_to_smiles(record: PeptideRecord) -> str:
+def sequence_to_smiles(record: PeptideRecord) -> str | None:
     """RDKit Chem.MolFromSequence(record.sequence_canonical) -> canonical
-    SMILES string."""
-    raise NotImplementedError
+    SMILES string, or None if the sequence contains a character
+    Chem.MolFromSequence doesn't recognize as a standard residue."""
+    sequence = (record.sequence_canonical or record.sequence_raw).upper()
+    mol = Chem.MolFromSequence(sequence)
+    if mol is None:
+        return None
+    return Chem.MolToSmiles(mol)

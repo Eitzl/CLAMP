@@ -1,0 +1,208 @@
+[
+  {
+    "id": 11,
+    "sequence": "RVKRVWPLVIRTVIAGYNLYRAIKKK",
+    "smiles": [
+      "CC[C@H](C)[C@H](NC(=O)[C@H](C)NC(=O)[C@H](CCCN=C(N)N)NC(=O)[C@H](CC1=CC=C(O)C=C1)NC(=O)[C@H](CC(C)C)NC(=O)[C@H](CC(N)=O)NC(=O)[C@H](CC1=CC=C(O)C=C1)NC(=O)CNC(=O)[C@H](C)NC(=O)[C@@H](NC(=O)[C@@H](NC(=O)[C@@H](NC(=O)[C@H](CCCN=C(N)N)NC(=O)[C@@H](NC(=O)[C@@H](NC(=O)[C@H](CC(C)C)NC(=O)[C@@H]1CCCN1C(=O)[C@H](CC1=CNC2=CC=CC=C12)NC(=O)[C@@H](NC(=O)[C@H](CCCN=C(N)N)NC(=O)[C@H](CCCCN)NC(=O)[C@@H](NC(=O)[C@@H](N)CCCN=C(N)N)C(C)C)C(C)C)C(C)C)[C@@H](C)CC)[C@@H](C)O)C(C)C)[C@@H](C)CC)C(=O)N[C@@H](CCCCN)C(=O)N[C@@H](CCCCN)C(=O)N[C@@H](CCCCN)C(=O)O",
+      "CC[C@H](C)[C@H](NC(=O)[C@H](C)NC(=O)[C@H](CCCNC(=N)N)NC(=O)[C@H](CC1=CC=C(O)C=C1)NC(=O)[C@H](CC(C)C)NC(=O)[C@H](CC(N)=O)NC(=O)[C@H](CC1=CC=C(O)C=C1)NC(=O)CNC(=O)[C@H](C)NC(=O)[C@@H](NC(=O)[C@@H](NC(=O)[C@@H](NC(=O)[C@H](CCCNC(=N)N)NC(=O)[C@@H](NC(=O)[C@@H](NC(=O)[C@H](CC(C)C)NC(=O)[C@@H]1CCCN1C(=O)[C@H](CC1=CNC2=CC=CC=C12)NC(=O)[C@@H](NC(=O)[C@H](CCCNC(=N)N)NC(=O)[C@H](CCCCN)NC(=O)[C@@H](NC(=O)[C@@H](N)CCCNC(=N)N)C(C)C)C(C)C)C(C)C)[C@@H](C)CC)[C@@H](C)O)C(C)C)[C@@H](C)CC)C(=O)N[C@@H](CCCCN)C(=O)N[C@@H](CCCCN)C(=O)N[C@@H](CCCCN)C(=O)O"
+    ],
+    "nterminal": null,
+    "cterminal": null,
+    "bonds": [],
+    "targets": {
+      "Salmonella enterica": [
+        0.4,
+        2.65,
+        1.505
+      ],
+      "Listeria monocytogenes": [
+        0.8,
+        2.0,
+        1.4633333333333336
+      ],
+      "Escherichia coli": [
+        0.701,
+        4.0,
+        2.240083333333333
+      ],
+      "Klebsiella pneumoniae": [
+        0.4,
+        3.79,
+        0.78
+      ],
+      "Pseudomonas aeruginosa": [
+        3.18,
+        8.0,
+        5.06
+      ],
+      "Staphylococcus aureus": [
+        0.4,
+        2.36,
+        1.112125
+      ],
+      "Neisseria gonorrhoeae": [
+        2.21,
+        2.38,
+        2.295
+      ],
+      "Proteus vulgaris": [
+        1.27,
+        4.71,
+        2.99
+      ],
+      "Serratia sp.": [
+        2.17,
+        4.47,
+        3.32
+      ],
+      "Shigella sonnei": [
+        0.995,
+        0.995,
+        0.995
+      ],
+      "Enterococcus faecalis": [
+        0.51,
+        0.51,
+        0.51
+      ],
+      "Micrococcus luteus": [
+        0.51,
+        0.51,
+        0.51
+      ],
+      "Staphylococcus epidermidis": [
+        4.0,
+        4.0,
+        4.0
+      ],
+      "Staphylococcus saprophyticus": [
+        0.669,
+        0.67,
+        0.6695
+      ],
+      "Streptococcus agalactiae": [
+        1.51,
+        3.8,
+        2.655
+      ],
+      "Salmonella typhimurium": [
+        2.0,
+        2.0,
+        2.0
+      ],
+      "Bacillus subtilis": [
+        2.0,
+        2.0,
+        2.0
+      ]
+    },
+    "hemolytic_hc50": [
+      6.0,
+      6.0,
+      6.0
+    ]
+  },
+  {
+    "id": 57,
+    "sequence": "VTCDILSVEAKGVKLNDAACAAHCLFRGRSGGYCNGKRVCVCR",
+    "smiles": [],
+    "nterminal": null,
+    "cterminal": null,
+    "bonds": [
+      [
+        3,
+        34,
+        "DSB"
+      ],
+      [
+        20,
+        40,
+        "DSB"
+      ],
+      [
+        24,
+        42,
+        "DSB"
+      ]
+    ],
+    "targets": {
+      "Staphylococcus aureus": [
+        0.176,
+        5.51,
+        2.3553333333333333
+      ],
+      "Micrococcus luteus": [
+        0.687,
+        1.76,
+        1.1823333333333335
+      ],
+      "Escherichia coli": [
+        22.0,
+        22.0,
+        22.0
+      ],
+      "Pseudomonas aeruginosa": [
+        22.0,
+        22.0,
+        22.0
+      ],
+      "Bacillus subtilis": [
+        0.22,
+        0.441,
+        0.3305
+      ],
+      "Staphylococcus epidermidis": [
+        1.76,
+        1.76,
+        1.76
+      ],
+      "Corynebacterium diphtheriae": [
+        1.32,
+        1.76,
+        1.54
+      ],
+      "Shigella flexneri": [
+        6.61,
+        6.61,
+        6.61
+      ],
+      "Proteus vulgaris": [
+        6.61,
+        6.61,
+        6.61
+      ],
+      "Streptococcus pyogenes": [
+        0.22,
+        0.352,
+        0.286
+      ]
+    },
+    "hemolytic_hc50": null
+  },
+  {
+    "id": 105,
+    "sequence": "SwFkTkSk",
+    "smiles": [],
+    "nterminal": null,
+    "cterminal": null,
+    "bonds": [
+      [
+        1,
+        8,
+        "AMD"
+      ]
+    ],
+    "targets": {
+      "Staphylococcus aureus": [
+        7.92,
+        15.8,
+        11.86
+      ]
+    },
+    "hemolytic_hc50": [
+      396.0,
+      396.0,
+      396.0
+    ]
+  }
+]
