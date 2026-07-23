@@ -14,4 +14,4 @@ Tracks work on `MD_design_docs/10_phase2_implementation_design.md` and
 - [x] Self-review both docs against doc 09's bar (concreteness, options+recommendation, DoD, runbook, open questions) — 2026-07-23 17:50 UTC — verified cross-doc consistency (doc11 reuses doc10's `load_encoder`/`mean_pool` signatures exactly), verified all doc05/doc07 section citations against the source text, confirmed no files under src/ or tests/ were touched (docs-only, `git status` shows only the two new MD files + this one)
 - [x] Commit — 2026-07-23 17:52 UTC
 - [x] Push branch — 2026-07-23 17:53 UTC
-- [ ] Open PR to Eitzl/CLAMP master
+- [x] Open PR to Eitzl/CLAMP master — 2026-07-23 17:56 UTC — https://github.com/Eitzl/CLAMP/pull/5
