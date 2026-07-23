@@ -57,7 +57,22 @@ def convert_record(record: PeptideRecord, curated_smiles: str | None = None) -> 
     if curated_smiles is not None:
         return _validate(curated_smiles, SmilesSource.DB_CURATED, record, dropped_modifications=[])
 
-    needs_p2smi = bool(record.is_cyclic or record.unusual_residues or record.nterm_mod or record.cterm_mod)
+    sequence_for_dispatch = record.sequence_canonical or record.sequence_raw
+    # A lowercase letter signals a D-amino-acid (p2smi's own convention —
+    # see convert/p2smi_adapter.py). RDKit's Chem.MolFromSequence has no
+    # per-residue case-sensitive D/L handling at all (confirmed directly:
+    # it ignores letter case entirely and always emits the flavor=0/L-form
+    # regardless), so a D-containing sequence must go through p2smi even
+    # when nothing else about the record (no unusual_residues/mods/
+    # cyclization) would otherwise trigger that path.
+    has_lowercase_residue = any(ch.islower() for ch in sequence_for_dispatch)
+    needs_p2smi = bool(
+        record.is_cyclic
+        or record.unusual_residues
+        or record.nterm_mod
+        or record.cterm_mod
+        or has_lowercase_residue
+    )
     if needs_p2smi:
         smiles, dropped = convert_via_p2smi(record)
         if smiles is not None:
