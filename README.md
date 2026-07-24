@@ -6,8 +6,12 @@ membrane permeabilization, measured via HC50 (hemolytic activity) and MIC
 language model and fine-tune it on a unified, deduplicated dataset pulled
 together from several public AMP/hemolysis databases.
 
-This project is under active development, following the five-phase plan in
-`MD_design_docs/08_implementation_roadmap.md`.
+This project follows the five-phase plan in
+`MD_design_docs/08_implementation_roadmap.md`. **Phase 1 (data acquisition &
+preprocessing) is complete** — the pipeline below pulls, converts,
+deduplicates, and normalizes all five sources into a unified dataset. Phases
+2-5 (embedding/splitting, model selection, multitask training, ablations)
+are not yet implemented.
 
 
 ## Why five sources
@@ -68,7 +72,7 @@ stage's output.
 uv run pytest
 ```
 
-Tests are organized by pipeline stage under `tests/data/`, with real
+173 tests, organized by pipeline stage under `tests/data/`, with real
 fixture data (not synthetic) pulled from each source under
 `tests/data/fixtures/`.
 
