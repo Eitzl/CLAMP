@@ -1,0 +1,10 @@
+# Ablations list
+
+Running list of ablations called out across the design docs, pulled from `08_implementation_roadmap.md`. Not a design doc in its own right — just a single place to see what's planned without hunting through each phase's prose.
+
+- **MIC head initialization** (Phase 4, P3) — copied HC50-head initialization vs. fresh Xavier initialization for the new MIC head when re-freezing the encoder. See `04_task5_multitask_architecture_plan.md`.
+- **Warm-start encoder** (Phase 5) — reproduce the PAMPA-fine-tuned checkpoint from the authors' script (weights not published) and run it through the exact P2 protocol to see if permeability features transfer to the lysis targets. See `03_task5_warmstart_encoder_ablation_plan.md`.
+- **Therapeutic Index (TI) head** (Phase 5) — default derived TI (`log(HC50) - log(MIC)`) vs. a third, learned TI head trained only on peptides with both labels.
+- **Encoder selection** (Phase 5, deferred from Phase 3) — retroactively run the `05_task5_model_selection_plan.md` pilot grid (hybrid-small, mtr-small, mlm-small, mlm-large; frozen-probe + short fine-tune each) against the real trained P2/P3 setup, to check whether locking `mlm-large` upfront (per [[project-phase-simplification]]) was the right call. Swap only if a clear winner emerges.
+- **LoRA fine-tuning** (Phase 5) — LoRA vs. Phase 4's full unfreeze-top-N-blocks protocol for the encoder-unfreeze stage of P2/P3 training, on cost and performance. See [[project-lora-finetuning-intent]].
+- **Split leakage audit methodology** (Phase 5, deferred from Phase 2) — the LOCo split's Tanimoto homology audit flagged 59.4% of val/test peptides as having a cross-split near-duplicate, but 0/1,975 of the Tanimoto==1.0 pairs are actually identical SMILES, suggesting Morgan/ECFP4 fingerprint collision rather than real leakage. Proceeded with the split unvalidated for the first working system (see `data/PHASE2_COLAB_NOTES.md`); revisit with a different fingerprint/audit method (or the doc 10-specced sequence-identity approach, if a usable sequence representation exists by then) before trusting downstream eval numbers.

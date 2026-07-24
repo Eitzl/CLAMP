@@ -22,3 +22,16 @@ data/datasheet/*
 !data/processed/.gitkeep
 !data/datasheet/.gitkeep
 data/manifest.json
+
+# Local Phase 2 artifacts (embeddings/clustering — local filesystem only,
+# same convention as above; see MD_design_docs/10_phase2_implementation_design.md §15)
+data/embeddings/*
+data/splits/*
+!data/embeddings/.gitkeep
+!data/splits/.gitkeep
+data/manifest_phase2.json
+
+# Local run trackers/scratch — not part of the versioned pipeline output,
+# just session notes and archived one-off pull data.
+data/test_runs/
+data/TEST_RUN_AND_PULL_PROGRESS.md
