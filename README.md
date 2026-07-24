@@ -9,6 +9,21 @@ together from several public AMP/hemolysis databases.
 This project is under active development, following the five-phase plan in
 `MD_design_docs/08_implementation_roadmap.md`.
 
+## Design philosophy
+
+> Make things as simple as possible, but no simpler. (Einstein's razor)
+
+Prefer established external tools (e.g. MMseqs2 for sequence clustering/
+homology partitioning) over custom-built pipeline components. Favor the
+simplest architecture that satisfies the actual requirement — an extra
+layer, a shared module, or a bespoke statistical procedure needs a concrete
+justification tied to a real requirement, not just "the reference
+implementation did it this way" or "it might be useful later." Don't add
+rigor or infrastructure the project doesn't need — this applies as much to
+AI-agent-driven contributions as to human-written ones (see this
+[r/ClaudeCode critique](https://www.reddit.com/r/ClaudeCode/comments/1rgqv2z/please_stop_spamming_oss_projects_with_useless/)
+of complexity/churn added just because a tool is capable of producing it).
+See `CLAUDE.md` for the fuller reasoning.
 
 ## Why five sources
 
